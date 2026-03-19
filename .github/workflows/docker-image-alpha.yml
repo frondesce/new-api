@@ -13,6 +13,7 @@ on:
 jobs:
   build_single_arch:
     name: Build & push (${{ matrix.arch }}) [native]
+    if: github.repository == 'QuantumNous/new-api'
     strategy:
       fail-fast: false
       matrix:
@@ -88,6 +89,7 @@ jobs:
 
   create_manifests:
     name: Create multi-arch manifests (Docker Hub + GHCR)
+    if: github.repository == 'QuantumNous/new-api'
     needs: [build_single_arch]
     runs-on: ubuntu-latest
     permissions:
