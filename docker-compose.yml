@@ -16,7 +16,7 @@ version: '3.4' # For compatibility with older Docker versions
 
 services:
   new-api:
-    image: calciumion/new-api:latest
+    image: ${NEW_API_IMAGE:-calciumion/new-api:latest}
     container_name: new-api
     restart: always
     command: --log-dir /app/logs
@@ -26,6 +26,8 @@ services:
       - ./data:/data
       - ./logs:/app/logs
     environment:
+      # Example for fork deployment:
+      # NEW_API_IMAGE=ghcr.io/<github-owner>/<repo>:v1.0.0 docker compose up -d
       - SQL_DSN=postgresql://root:123456@postgres:5432/new-api # ⚠️ IMPORTANT: Change the password in production!
 #      - SQL_DSN=root:123456@tcp(mysql:3306)/new-api  # Point to the mysql service, uncomment if using MySQL
       - REDIS_CONN_STRING=redis://redis
