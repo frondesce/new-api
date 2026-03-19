@@ -39,6 +39,18 @@ type Adaptor struct {
 	ResponseFormat string
 }
 
+func shouldSkipDefaultAuthorizationHeader(headersOverride map[string]interface{}) bool {
+	if len(headersOverride) == 0 {
+		return false
+	}
+	for k := range headersOverride {
+		if strings.EqualFold(k, "Authorization") || strings.EqualFold(k, "cf-aig-authorization") {
+			return true
+		}
+	}
+	return false
+}
+
 // parseReasoningEffortFromModelSuffix 从模型名称中解析推理级别
 // support OAI models: o1-mini/o3-mini/o4-mini/o1/o3 etc...
 // minimal effort only available in gpt-5
@@ -172,6 +184,9 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 		url = strings.Replace(url, "{model}", info.UpstreamModelName, -1)
 		return url, nil
 	default:
+		if shouldUseMiMoTTSAudioBridge(info) {
+			return fmt.Sprintf("%s/v1/chat/completions", info.ChannelBaseUrl), nil
+		}
 		if (info.RelayFormat == types.RelayFormatClaude || info.RelayFormat == types.RelayFormatGemini) &&
 			info.RelayMode != relayconstant.RelayModeResponses &&
 			info.RelayMode != relayconstant.RelayModeResponsesCompact {
@@ -187,20 +202,18 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, header *http.Header, info *
 		header.Set("api-key", info.ApiKey)
 		return nil
 	}
+	if shouldUseMiMoTTSAudioBridge(info) {
+		header.Set("Content-Type", "application/json")
+		header.Set("Accept", "application/json")
+		header.Set("api-key", info.ApiKey)
+		return nil
+	}
 	if info.ChannelType == constant.ChannelTypeOpenAI && "" != info.Organization {
 		header.Set("OpenAI-Organization", info.Organization)
 	}
-	// 检查 Header Override 是否已设置 Authorization，如果已设置则跳过默认设置
-	// 这样可以避免在 Header Override 应用时被覆盖（虽然 Header Override 会在之后应用，但这里作为额外保护）
-	hasAuthOverride := false
-	if len(info.HeadersOverride) > 0 {
-		for k := range info.HeadersOverride {
-			if strings.EqualFold(k, "Authorization") {
-				hasAuthOverride = true
-				break
-			}
-		}
-	}
+	// 如果上游使用自定义认证头（例如 Cloudflare AI Gateway 的 cf-aig-authorization），
+	// 不要再额外注入默认 Authorization，避免同时发送两套鉴权信息。
+	hasAuthOverride := shouldSkipDefaultAuthorizationHeader(info.HeadersOverride)
 	if info.RelayMode == relayconstant.RelayModeRealtime {
 		swp := c.Request.Header.Get("Sec-WebSocket-Protocol")
 		if swp != "" {
@@ -369,7 +382,15 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.AudioRequest) (io.Reader, error) {
 	a.ResponseFormat = request.ResponseFormat
 	if info.RelayMode == relayconstant.RelayModeAudioSpeech {
-		jsonData, err := json.Marshal(request)
+		if shouldUseMiMoTTSAudioBridge(info) {
+			jsonData, err := buildMiMoTTSChatRequest(info, request)
+			if err != nil {
+				return nil, err
+			}
+			return bytes.NewReader(jsonData), nil
+		}
+
+		jsonData, err := common.Marshal(request)
 		if err != nil {
 			return nil, fmt.Errorf("error marshalling object: %w", err)
 		}
@@ -616,7 +637,11 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 	case relayconstant.RelayModeRealtime:
 		err, usage = OpenaiRealtimeHandler(c, info)
 	case relayconstant.RelayModeAudioSpeech:
-		usage = OpenaiTTSHandler(c, resp, info)
+		if shouldUseMiMoTTSAudioBridge(info) {
+			usage, err = MiMoTTSHandler(c, resp, info)
+		} else {
+			usage = OpenaiTTSHandler(c, resp, info)
+		}
 	case relayconstant.RelayModeAudioTranslation:
 		fallthrough
 	case relayconstant.RelayModeAudioTranscription:
