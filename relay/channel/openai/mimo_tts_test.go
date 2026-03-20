@@ -99,15 +99,15 @@ func TestConvertAudioRequest_ConvertsMiMoTTSIntoChatCompletionsBody(t *testing.T
 	require.True(t, ok)
 	require.Len(t, messages, 2)
 
-	systemMessage, ok := messages[0].(map[string]any)
-	require.True(t, ok)
-	require.Equal(t, "system", systemMessage["role"])
-	require.Equal(t, "Speak warmly.", systemMessage["content"])
-
-	userMessage, ok := messages[1].(map[string]any)
+	userMessage, ok := messages[0].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "user", userMessage["role"])
-	require.Equal(t, "hello world", userMessage["content"])
+	require.Equal(t, "Please synthesize the following assistant message into speech. Follow these speaking instructions: Speak warmly.", userMessage["content"])
+
+	assistantMessage, ok := messages[1].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "assistant", assistantMessage["role"])
+	require.Equal(t, "hello world", assistantMessage["content"])
 
 	audio, ok := payload["audio"].(map[string]any)
 	require.True(t, ok)
@@ -148,11 +148,17 @@ func TestConvertAudioRequest_MapsSpeedIntoMiMoStyleTag(t *testing.T) {
 
 	messages, ok := payload["messages"].([]any)
 	require.True(t, ok)
-	require.Len(t, messages, 1)
+	require.Len(t, messages, 2)
 
 	userMessage, ok := messages[0].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "<style>Slow down</style>hello world", userMessage["content"])
+	require.Equal(t, "user", userMessage["role"])
+	require.Equal(t, miMoTTSSynthesisPrompt, userMessage["content"])
+
+	assistantMessage, ok := messages[1].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "assistant", assistantMessage["role"])
+	require.Equal(t, "<style>Slow down</style>hello world", assistantMessage["content"])
 }
 
 func TestApplyMiMoSpeedStyle_MergesIntoExistingStyleTag(t *testing.T) {
