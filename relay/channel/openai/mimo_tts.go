@@ -26,6 +26,7 @@ const (
 	miMoTTSModelPrefix     = "mimo-v2-tts"
 	miMoDefaultVoice       = "mimo_default"
 	miMoDefaultAudioFormat = "mp3"
+	miMoTTSSynthesisPrompt = "Please synthesize the following assistant message into speech."
 )
 
 type miMoTTSChatResponse struct {
@@ -94,18 +95,21 @@ func buildMiMoTTSChatRequest(info *relaycommon.RelayInfo, request dto.AudioReque
 }
 
 func buildMiMoMessages(instructions, input string) []dto.Message {
-	messages := make([]dto.Message, 0, 2)
-	if strings.TrimSpace(instructions) != "" {
-		messages = append(messages, dto.Message{
-			Role:    "system",
-			Content: instructions,
-		})
+	prompt := miMoTTSSynthesisPrompt
+	if trimmedInstructions := strings.TrimSpace(instructions); trimmedInstructions != "" {
+		prompt += " Follow these speaking instructions: " + trimmedInstructions
 	}
-	messages = append(messages, dto.Message{
-		Role:    "user",
-		Content: input,
-	})
-	return messages
+
+	return []dto.Message{
+		{
+			Role:    "user",
+			Content: prompt,
+		},
+		{
+			Role:    "assistant",
+			Content: input,
+		},
+	}
 }
 
 func applyMiMoSpeedStyle(input string, speed *float64) string {
