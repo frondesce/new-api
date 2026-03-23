@@ -122,9 +122,13 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	var streamItems []string // store stream items
 	var lastStreamData string
 	var secondLastStreamData string // 存储倒数第二个stream data，用于音频模型
+	var toolIndexes *toolCallIndexState
 
 	// 检查是否为音频模型
 	isAudioModel := strings.Contains(strings.ToLower(model), "audio")
+	if shouldNormalizeCloudflareGatewayToolCallIndexes(info) {
+		toolIndexes = newToolCallIndexState()
+	}
 
 	helper.StreamScannerHandler(c, resp, info, func(data string) bool {
 		if lastStreamData != "" {
@@ -134,6 +138,14 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 			}
 		}
 		if len(data) > 0 {
+			if toolIndexes != nil {
+				normalizedData, err := normalizeCloudflareGatewayToolCallIndexes(data, toolIndexes)
+				if err == nil {
+					data = normalizedData
+				} else if common.DebugEnabled {
+					logger.LogDebug(c, "skip cloudflare gateway tool-call normalization: "+err.Error())
+				}
+			}
 			// 对音频模型，保存倒数第二个stream data
 			if isAudioModel && lastStreamData != "" {
 				secondLastStreamData = lastStreamData
