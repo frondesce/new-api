@@ -368,6 +368,12 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 		}
 	}
 
+	if shouldInjectCloudflareGatewayGeminiThoughtSignature(info, request) {
+		if err := injectCloudflareGatewayGeminiThoughtSignature(request); err != nil {
+			return nil, fmt.Errorf("inject cloudflare gateway gemini thought signature: %w", err)
+		}
+	}
+
 	return request, nil
 }
 

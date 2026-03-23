@@ -1,13 +1,17 @@
 package openai
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 )
+
+const cloudflareGatewayGeminiThoughtSignatureBypassValue = "context_engineering_is_the_way_to_go"
 
 type toolCallIndexState struct {
 	indexByChoice map[int]map[string]int
@@ -70,6 +74,83 @@ func shouldNormalizeCloudflareGatewayToolCallIndexes(info *relaycommon.RelayInfo
 		return false
 	}
 	return strings.Contains(strings.ToLower(info.ChannelBaseUrl), "gateway.ai.cloudflare.com")
+}
+
+func shouldInjectCloudflareGatewayGeminiThoughtSignature(info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) bool {
+	if info == nil || request == nil || info.RelayMode != relayconstant.RelayModeChatCompletions {
+		return false
+	}
+	if !model_setting.GetGeminiSettings().FunctionCallThoughtSignatureEnabled {
+		return false
+	}
+	if !strings.Contains(strings.ToLower(info.ChannelBaseUrl), "gateway.ai.cloudflare.com") {
+		return false
+	}
+	modelName := strings.ToLower(strings.TrimSpace(request.Model))
+	if modelName == "" {
+		modelName = strings.ToLower(strings.TrimSpace(info.UpstreamModelName))
+	}
+	return strings.HasPrefix(modelName, "google-ai-studio/") ||
+		strings.Contains(modelName, "/gemini") ||
+		strings.HasPrefix(modelName, "gemini")
+}
+
+func injectCloudflareGatewayGeminiThoughtSignature(request *dto.GeneralOpenAIRequest) error {
+	if request == nil {
+		return nil
+	}
+	for idx := range request.Messages {
+		message := &request.Messages[idx]
+		if len(message.ToolCalls) == 0 {
+			continue
+		}
+		if message.Role != "assistant" && message.Role != "model" {
+			continue
+		}
+
+		var toolCalls []map[string]any
+		if err := common.Unmarshal(message.ToolCalls, &toolCalls); err != nil {
+			return fmt.Errorf("unmarshal tool calls: %w", err)
+		}
+
+		modified := false
+		for toolIdx := range toolCalls {
+			toolCall := toolCalls[toolIdx]
+			if len(toolCall) == 0 {
+				continue
+			}
+
+			extraContent, _ := toolCall["extra_content"].(map[string]any)
+			if extraContent == nil {
+				extraContent = make(map[string]any)
+				toolCall["extra_content"] = extraContent
+			}
+
+			googleExtra, _ := extraContent["google"].(map[string]any)
+			if googleExtra == nil {
+				googleExtra = make(map[string]any)
+				extraContent["google"] = googleExtra
+			}
+
+			if thoughtSignature, ok := googleExtra["thought_signature"].(string); ok && strings.TrimSpace(thoughtSignature) != "" {
+				continue
+			}
+
+			googleExtra["thought_signature"] = cloudflareGatewayGeminiThoughtSignatureBypassValue
+			modified = true
+		}
+
+		if !modified {
+			continue
+		}
+
+		toolCallsRaw, err := common.Marshal(toolCalls)
+		if err != nil {
+			return fmt.Errorf("marshal tool calls: %w", err)
+		}
+		message.ToolCalls = toolCallsRaw
+	}
+	return nil
 }
 
 func normalizeCloudflareGatewayToolCallIndexes(data string, state *toolCallIndexState) (string, error) {

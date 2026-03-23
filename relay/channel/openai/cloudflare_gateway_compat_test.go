@@ -3,8 +3,10 @@ package openai
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -42,6 +44,44 @@ func TestShouldNormalizeCloudflareGatewayToolCallIndexes(t *testing.T) {
 		ChannelMeta: &relaycommon.ChannelMeta{
 			ChannelBaseUrl: "https://api.openrouter.ai/v1",
 		},
+	}))
+}
+
+func TestShouldInjectCloudflareGatewayGeminiThoughtSignature(t *testing.T) {
+	t.Parallel()
+
+	originEnabled := model_setting.GetGeminiSettings().FunctionCallThoughtSignatureEnabled
+	t.Cleanup(func() {
+		model_setting.GetGeminiSettings().FunctionCallThoughtSignatureEnabled = originEnabled
+	})
+	model_setting.GetGeminiSettings().FunctionCallThoughtSignatureEnabled = true
+
+	require.True(t, shouldInjectCloudflareGatewayGeminiThoughtSignature(&relaycommon.RelayInfo{
+		RelayMode: relayconstant.RelayModeChatCompletions,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelBaseUrl:    "https://gateway.ai.cloudflare.com/v1/account/gateway/compat/chat/completions",
+			UpstreamModelName: "google-ai-studio/gemini-3-flash-preview",
+		},
+	}, &dto.GeneralOpenAIRequest{
+		Model: "google-ai-studio/gemini-3-flash-preview",
+	}))
+
+	require.False(t, shouldInjectCloudflareGatewayGeminiThoughtSignature(&relaycommon.RelayInfo{
+		RelayMode: relayconstant.RelayModeResponses,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelBaseUrl: "https://gateway.ai.cloudflare.com/v1/account/gateway/compat/chat/completions",
+		},
+	}, &dto.GeneralOpenAIRequest{
+		Model: "google-ai-studio/gemini-3-flash-preview",
+	}))
+
+	require.False(t, shouldInjectCloudflareGatewayGeminiThoughtSignature(&relaycommon.RelayInfo{
+		RelayMode: relayconstant.RelayModeChatCompletions,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelBaseUrl: "https://api.openrouter.ai/v1",
+		},
+	}, &dto.GeneralOpenAIRequest{
+		Model: "google-ai-studio/gemini-3-flash-preview",
 	}))
 }
 
@@ -83,4 +123,65 @@ func TestNormalizeCloudflareGatewayToolCallIndexes_LeavesExistingIndexUntouched(
 	normalized, err := normalizeCloudflareGatewayToolCallIndexes(data, state)
 	require.NoError(t, err)
 	require.JSONEq(t, data, normalized)
+}
+
+func TestInjectCloudflareGatewayGeminiThoughtSignature_AddsBypassSignature(t *testing.T) {
+	t.Parallel()
+
+	request := &dto.GeneralOpenAIRequest{
+		Messages: []dto.Message{
+			{
+				Role:    "user",
+				Content: "今天是几号来着？",
+			},
+			{
+				Role:    "assistant",
+				Content: "",
+				ToolCalls: []byte(`[
+					{
+						"id":"z2lk5c5p",
+						"type":"function",
+						"function":{"name":"get_current_timestamp","arguments":"{}"}
+					}
+				]`),
+			},
+		},
+	}
+
+	err := injectCloudflareGatewayGeminiThoughtSignature(request)
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		cloudflareGatewayGeminiThoughtSignatureBypassValue,
+		gjson.GetBytes(request.Messages[1].ToolCalls, "0.extra_content.google.thought_signature").String(),
+	)
+}
+
+func TestInjectCloudflareGatewayGeminiThoughtSignature_LeavesExistingSignatureUntouched(t *testing.T) {
+	t.Parallel()
+
+	request := &dto.GeneralOpenAIRequest{
+		Messages: []dto.Message{
+			{
+				Role:    "assistant",
+				Content: "",
+				ToolCalls: []byte(`[
+					{
+						"id":"z2lk5c5p",
+						"type":"function",
+						"extra_content":{"google":{"thought_signature":"original_signature"}},
+						"function":{"name":"get_current_timestamp","arguments":"{}"}
+					}
+				]`),
+			},
+		},
+	}
+
+	err := injectCloudflareGatewayGeminiThoughtSignature(request)
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		"original_signature",
+		gjson.GetBytes(request.Messages[0].ToolCalls, "0.extra_content.google.thought_signature").String(),
+	)
 }
