@@ -85,6 +85,60 @@ func TestShouldInjectCloudflareGatewayGeminiThoughtSignature(t *testing.T) {
 	}))
 }
 
+func TestSanitizeCloudflareGatewayGeminiMessages_DropsOrphanToolMessage(t *testing.T) {
+	t.Parallel()
+
+	request := &dto.GeneralOpenAIRequest{
+		Messages: []dto.Message{
+			{
+				Role:       "tool",
+				Content:    `{"result":"stale"}`,
+				ToolCallId: "call_orphan",
+			},
+			{
+				Role:    "user",
+				Content: "继续",
+			},
+		},
+	}
+
+	err := sanitizeCloudflareGatewayGeminiMessages(request)
+	require.NoError(t, err)
+	require.Len(t, request.Messages, 1)
+	require.Equal(t, "user", request.Messages[0].Role)
+}
+
+func TestSanitizeCloudflareGatewayGeminiMessages_ResolvesToolMessageNameFromAssistantToolCall(t *testing.T) {
+	t.Parallel()
+
+	request := &dto.GeneralOpenAIRequest{
+		Messages: []dto.Message{
+			{
+				Role:    "assistant",
+				Content: "",
+				ToolCalls: []byte(`[
+					{
+						"id":"call_search",
+						"type":"function",
+						"function":{"name":"search_web","arguments":"{\"query\":\"dc opt-997\"}"}
+					}
+				]`),
+			},
+			{
+				Role:       "tool",
+				Content:    `[{"title":"result"}]`,
+				ToolCallId: "call_search",
+			},
+		},
+	}
+
+	err := sanitizeCloudflareGatewayGeminiMessages(request)
+	require.NoError(t, err)
+	require.Len(t, request.Messages, 2)
+	require.NotNil(t, request.Messages[1].Name)
+	require.Equal(t, "search_web", *request.Messages[1].Name)
+}
+
 func TestNormalizeCloudflareGatewayToolCallIndexes_AssignsMissingIndex(t *testing.T) {
 	t.Parallel()
 
