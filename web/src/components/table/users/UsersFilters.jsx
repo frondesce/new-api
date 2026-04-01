@@ -18,19 +18,20 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useRef } from 'react';
-import { Form, Button } from '@douyinfe/semi-ui';
+import { Form, Button, Switch } from '@douyinfe/semi-ui';
 import { IconSearch } from '@douyinfe/semi-icons';
 
 const UsersFilters = ({
   formInitValues,
   setFormApi,
   searchUsers,
-  loadUsers,
-  activePage,
   pageSize,
   groupOptions,
   loading,
   searching,
+  showDeletedUsers,
+  handleShowDeletedUsersChange,
+  resetFilters,
   t,
 }) => {
   const formApiRef = useRef(null);
@@ -38,9 +39,7 @@ const UsersFilters = ({
   const handleReset = () => {
     if (!formApiRef.current) return;
     formApiRef.current.reset();
-    setTimeout(() => {
-      loadUsers(1, pageSize);
-    }, 100);
+    resetFilters().catch(() => {});
   };
 
   return (
@@ -86,6 +85,18 @@ const UsersFilters = ({
             showClear
             pure
             size='small'
+          />
+        </div>
+        <div className='flex items-center justify-between md:justify-start gap-2 w-full md:w-auto whitespace-nowrap px-1'>
+          <span className='text-sm text-[var(--semi-color-text-2)]'>
+            {t('显示已注销用户')}
+          </span>
+          <Switch
+            size='small'
+            checked={showDeletedUsers}
+            onChange={(checked) => {
+              handleShowDeletedUsersChange(Boolean(checked)).catch(() => {});
+            }}
           />
         </div>
         <div className='flex gap-2 w-full md:w-auto'>

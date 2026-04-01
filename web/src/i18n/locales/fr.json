@@ -3317,6 +3317,7 @@
     "从剪贴板粘贴配置": "Coller la config",
     "剪贴板中未检测到连接信息": "Aucune info de connexion trouvée dans le presse-papiers",
     "连接信息已填入": "Informations de connexion appliquées",
-    "无法读取剪贴板": "Impossible de lire le presse-papiers"
+    "无法读取剪贴板": "Impossible de lire le presse-papiers",
+    "显示已注销用户": "Afficher les utilisateurs supprimes"
   }
 }

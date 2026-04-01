@@ -35,6 +35,7 @@ export const useUsersData = () => {
   const [searching, setSearching] = useState(false);
   const [groupOptions, setGroupOptions] = useState([]);
   const [userCount, setUserCount] = useState(0);
+  const [showDeletedUsers, setShowDeletedUsers] = useState(false);
 
   // Modal states
   const [showAddUser, setShowAddUser] = useState(false);
@@ -69,10 +70,27 @@ export const useUsersData = () => {
     setUsers(users);
   };
 
+  const buildUsersQuery = (startIdx, pageSize, includeDeleted, extraParams = {}) => {
+    const query = new URLSearchParams({
+      p: String(startIdx),
+      page_size: String(pageSize),
+      ...extraParams,
+    });
+    if (includeDeleted) {
+      query.set('include_deleted', 'true');
+    }
+    return query.toString();
+  };
+
   // Load users data
-  const loadUsers = async (startIdx, pageSize) => {
+  const loadUsers = async (
+    startIdx,
+    pageSize,
+    includeDeleted = showDeletedUsers,
+  ) => {
     setLoading(true);
-    const res = await API.get(`/api/user/?p=${startIdx}&page_size=${pageSize}`);
+    const query = buildUsersQuery(startIdx, pageSize, includeDeleted);
+    const res = await API.get(`/api/user/?${query}`);
     const { success, message, data } = res.data;
     if (success) {
       const newPageData = data.items;
@@ -91,23 +109,30 @@ export const useUsersData = () => {
     pageSize,
     searchKeyword = null,
     searchGroup = null,
+    includeDeleted = showDeletedUsers,
   ) => {
     // If no parameters passed, get values from form
     if (searchKeyword === null || searchGroup === null) {
       const formValues = getFormValues();
-      searchKeyword = formValues.searchKeyword;
-      searchGroup = formValues.searchGroup;
+      if (searchKeyword === null) {
+        searchKeyword = formValues.searchKeyword;
+      }
+      if (searchGroup === null) {
+        searchGroup = formValues.searchGroup;
+      }
     }
 
     if (searchKeyword === '' && searchGroup === '') {
       // If keyword is blank, load files instead
-      await loadUsers(startIdx, pageSize);
+      await loadUsers(startIdx, pageSize, includeDeleted);
       return;
     }
     setSearching(true);
-    const res = await API.get(
-      `/api/user/search?keyword=${searchKeyword}&group=${searchGroup}&p=${startIdx}&page_size=${pageSize}`,
-    );
+    const query = buildUsersQuery(startIdx, pageSize, includeDeleted, {
+      keyword: searchKeyword,
+      group: searchGroup,
+    });
+    const res = await API.get(`/api/user/search?${query}`);
     const { success, message, data } = res.data;
     if (success) {
       const newPageData = data.items;
@@ -193,9 +218,9 @@ export const useUsersData = () => {
     setActivePage(page);
     const { searchKeyword, searchGroup } = getFormValues();
     if (searchKeyword === '' && searchGroup === '') {
-      loadUsers(page, pageSize).then();
+      loadUsers(page, pageSize, showDeletedUsers).then();
     } else {
-      searchUsers(page, pageSize, searchKeyword, searchGroup).then();
+      searchUsers(page, pageSize, searchKeyword, searchGroup, showDeletedUsers).then();
     }
   };
 
@@ -204,11 +229,14 @@ export const useUsersData = () => {
     localStorage.setItem('page-size', size + '');
     setPageSize(size);
     setActivePage(1);
-    loadUsers(activePage, size)
-      .then()
-      .catch((reason) => {
-        showError(reason);
-      });
+    const { searchKeyword, searchGroup } = getFormValues();
+    const action =
+      searchKeyword === '' && searchGroup === ''
+        ? loadUsers(1, size, showDeletedUsers)
+        : searchUsers(1, size, searchKeyword, searchGroup, showDeletedUsers);
+    action.catch((reason) => {
+      showError(reason);
+    });
   };
 
   // Handle table row styling for disabled/deleted users
@@ -228,10 +256,25 @@ export const useUsersData = () => {
   const refresh = async (page = activePage) => {
     const { searchKeyword, searchGroup } = getFormValues();
     if (searchKeyword === '' && searchGroup === '') {
-      await loadUsers(page, pageSize);
+      await loadUsers(page, pageSize, showDeletedUsers);
     } else {
-      await searchUsers(page, pageSize, searchKeyword, searchGroup);
+      await searchUsers(page, pageSize, searchKeyword, searchGroup, showDeletedUsers);
     }
+  };
+
+  const handleShowDeletedUsersChange = async (checked) => {
+    setShowDeletedUsers(checked);
+    const { searchKeyword, searchGroup } = getFormValues();
+    if (searchKeyword === '' && searchGroup === '') {
+      await loadUsers(1, pageSize, checked);
+      return;
+    }
+    await searchUsers(1, pageSize, searchKeyword, searchGroup, checked);
+  };
+
+  const resetFilters = async () => {
+    setShowDeletedUsers(false);
+    await loadUsers(1, pageSize, false);
   };
 
   // Fetch groups data
@@ -283,6 +326,7 @@ export const useUsersData = () => {
     userCount,
     searching,
     groupOptions,
+    showDeletedUsers,
 
     // Modal state
     showAddUser,
@@ -309,8 +353,10 @@ export const useUsersData = () => {
     resetUserTwoFA,
     handlePageChange,
     handlePageSizeChange,
+    handleShowDeletedUsersChange,
     handleRow,
     refresh,
+    resetFilters,
     closeAddUser,
     closeEditUser,
     getFormValues,
