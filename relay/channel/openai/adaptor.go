@@ -401,7 +401,6 @@ func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInf
 			}
 			return bytes.NewReader(jsonData), nil
 		}
-
 		jsonData, err := common.Marshal(request)
 		if err != nil {
 			return nil, fmt.Errorf("error marshalling object: %w", err)
