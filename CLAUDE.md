@@ -1,12 +1,54 @@
-# CLAUDE.md — Project Conventions for new-api
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Overview
 
 This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI providers (OpenAI, Claude, Gemini, Azure, AWS Bedrock, etc.) behind a unified API, with user management, billing, rate limiting, and an admin dashboard.
 
+Go module: `github.com/QuantumNous/new-api`
+
+## Build & Development Commands
+
+### Backend (from repo root)
+
+```bash
+go run .                                        # Run dev server (port 3000)
+go build -ldflags "-s -w -X 'github.com/QuantumNous/new-api/common.Version=$(cat VERSION)'" -o new-api
+go test ./...                                   # Run all tests
+go test -v ./relay/channel/openai/...           # Run tests for a specific package
+go test -run "TestRelayClaude" ./relay/channel/claude/...  # Run matching test functions
+```
+
+### Frontend (from `web/`)
+
+```bash
+bun install                    # Install dependencies
+bun run dev                    # Dev server (proxies /api to localhost:3000)
+bun run build                  # Production build
+bun run lint                   # Prettier check
+bun run lint:fix               # Prettier auto-fix
+bun run eslint                 # ESLint check
+bun run i18n:extract           # Extract i18n keys
+bun run i18n:sync              # Sync translations
+bun run i18n:lint              # Lint translation files
+```
+
+### Docker
+
+```bash
+docker-compose up -d           # PostgreSQL + Redis + new-api on port 3000
+```
+
+### Combined
+
+```bash
+make all                       # Build frontend then start backend dev server
+```
+
 ## Tech Stack
 
-- **Backend**: Go 1.22+, Gin web framework, GORM v2 ORM
+- **Backend**: Go 1.25.1, Gin web framework, GORM v2 ORM
 - **Frontend**: React 18, Vite, Semi Design UI (@douyinfe/semi-ui)
 - **Databases**: SQLite, MySQL, PostgreSQL (all three must be supported)
 - **Cache**: Redis (go-redis) + in-memory cache
@@ -18,23 +60,25 @@ This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI pro
 Layered architecture: Router -> Controller -> Service -> Model
 
 ```
-router/        — HTTP routing (API, relay, dashboard, web)
-controller/    — Request handlers
-service/       — Business logic
-model/         — Data models and DB access (GORM)
-relay/         — AI API relay/proxy with provider adapters
+main.go         — Entry point: loads .env, inits DB/Redis/i18n, starts background tasks, bootstraps Gin server
+                  Embeds frontend via //go:embed web/dist
+router/         — HTTP routing (API, relay, dashboard, web)
+controller/     — Request handlers
+service/        — Business logic
+model/          — Data models and DB access (GORM), migrations, cache sync
+relay/          — AI API relay/proxy with provider adapters
   relay/channel/ — Provider-specific adapters (openai/, claude/, gemini/, aws/, etc.)
-middleware/    — Auth, rate limiting, CORS, logging, distribution
-setting/       — Configuration management (ratio, model, operation, system, performance)
-common/        — Shared utilities (JSON, crypto, Redis, env, rate-limit, etc.)
-dto/           — Data transfer objects (request/response structs)
-constant/      — Constants (API types, channel types, context keys)
-types/         — Type definitions (relay formats, file sources, errors)
-i18n/          — Backend internationalization (go-i18n, en/zh)
-oauth/         — OAuth provider implementations
-pkg/           — Internal packages (cachex, ionet)
-web/           — React frontend
-  web/src/i18n/  — Frontend internationalization (i18next, zh/en/fr/ru/ja/vi)
+middleware/     — Auth, rate limiting, CORS, logging, distribution
+setting/        — Configuration management (ratio, model, operation, system, performance)
+common/         — Shared utilities (JSON wrappers, crypto, Redis, env, rate-limit)
+dto/            — Data transfer objects (request/response structs)
+constant/       — Constants (API types, channel types, context keys)
+types/          — Type definitions (relay formats, file sources, errors)
+i18n/           — Backend internationalization (go-i18n, en/zh)
+oauth/          — OAuth provider implementations
+pkg/            — Internal packages (cachex, ionet)
+web/            — React frontend
+  web/src/i18n/ — Frontend internationalization (i18next, zh/en/fr/ru/ja/vi)
 ```
 
 ## Internationalization (i18n)
@@ -50,6 +94,16 @@ web/           — React frontend
 - Usage: `useTranslation()` hook, call `t('中文key')` in components
 - Semi UI locale synced via `SemiLocaleWrapper`
 - CLI tools: `bun run i18n:extract`, `bun run i18n:sync`, `bun run i18n:lint`
+
+## Editing & Validation
+
+- Run the narrowest useful validation for the files you changed:
+  - Go changes: `go test ./<affected-package>/...` (or `go test ./...` for broader checks)
+  - Frontend changes: `cd web && bun run build`
+  - i18n changes: `cd web && bun run i18n:lint`
+- Match nearby naming, error handling, and file layout conventions
+- Make the smallest coherent change that fits existing patterns; do not refactor unrelated areas
+- The frontend is embedded into the Go binary at compile time — frontend changes require `bun run build` before `go run .`
 
 ## Rules
 
