@@ -23,7 +23,8 @@ import (
 )
 
 const (
-	miMoTTSModelPrefix     = "mimo-v2-tts"
+	miMoTTSModelPrefix     = "mimo-v"
+	miMoTTSModelSuffix     = "-tts"
 	miMoDefaultVoice       = "mimo_default"
 	miMoDefaultAudioFormat = "mp3"
 	miMoTTSSynthesisPrompt = "Please synthesize the following assistant message into speech."
@@ -56,7 +57,24 @@ type miMoTTSAudioPayload struct {
 
 func isMiMoChatTTSModel(model string) bool {
 	normalized := strings.TrimSpace(strings.ToLower(model))
-	return strings.HasPrefix(normalized, miMoTTSModelPrefix)
+	if !strings.HasPrefix(normalized, miMoTTSModelPrefix) {
+		return false
+	}
+
+	remaining := normalized[len(miMoTTSModelPrefix):]
+	suffixIdx := strings.Index(remaining, miMoTTSModelSuffix)
+	if suffixIdx <= 0 {
+		return false
+	}
+
+	version := remaining[:suffixIdx]
+	for _, ch := range version {
+		if (ch < '0' || ch > '9') && ch != '.' {
+			return false
+		}
+	}
+
+	return true
 }
 
 func shouldUseMiMoTTSAudioBridge(info *relaycommon.RelayInfo) bool {
@@ -67,7 +85,7 @@ func shouldUseMiMoTTSAudioBridge(info *relaycommon.RelayInfo) bool {
 
 func buildMiMoTTSChatRequest(info *relaycommon.RelayInfo, request dto.AudioRequest) ([]byte, error) {
 	if info != nil && info.IsStream {
-		return nil, errors.New("mimo-v2-tts does not support /v1/audio/speech streaming compatibility")
+		return nil, errors.New("MiMo TTS models do not support /v1/audio/speech streaming compatibility")
 	}
 
 	input := applyMiMoSpeedStyle(request.Input, request.Speed)

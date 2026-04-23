@@ -19,18 +19,33 @@ import (
 func TestGetRequestURL_UsesChatCompletionsForMiMoAudioSpeech(t *testing.T) {
 	t.Parallel()
 
-	adaptor := &Adaptor{}
-	info := &relaycommon.RelayInfo{
-		RelayMode: relayconstant.RelayModeAudioSpeech,
-		ChannelMeta: &relaycommon.ChannelMeta{
-			ChannelBaseUrl:    "https://api.xiaomimimo.com",
-			UpstreamModelName: "mimo-v2-tts",
-		},
+	testCases := []struct {
+		name  string
+		model string
+	}{
+		{name: "v2", model: "mimo-v2-tts"},
+		{name: "v2.5", model: "mimo-v2.5-tts"},
 	}
 
-	url, err := adaptor.GetRequestURL(info)
-	require.NoError(t, err)
-	require.Equal(t, "https://api.xiaomimimo.com/v1/chat/completions", url)
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			adaptor := &Adaptor{}
+			info := &relaycommon.RelayInfo{
+				RelayMode: relayconstant.RelayModeAudioSpeech,
+				ChannelMeta: &relaycommon.ChannelMeta{
+					ChannelBaseUrl:    "https://api.xiaomimimo.com",
+					UpstreamModelName: tc.model,
+				},
+			}
+
+			url, err := adaptor.GetRequestURL(info)
+			require.NoError(t, err)
+			require.Equal(t, "https://api.xiaomimimo.com/v1/chat/completions", url)
+		})
+	}
 }
 
 func TestSetupRequestHeader_UsesAPIKeyForMiMoTTS(t *testing.T) {
@@ -49,7 +64,7 @@ func TestSetupRequestHeader_UsesAPIKeyForMiMoTTS(t *testing.T) {
 		RelayMode: relayconstant.RelayModeAudioSpeech,
 		ChannelMeta: &relaycommon.ChannelMeta{
 			ApiKey:            "mimo-key",
-			UpstreamModelName: "mimo-v2-tts",
+			UpstreamModelName: "mimo-v2.5-tts",
 		},
 	}
 
@@ -73,12 +88,12 @@ func TestConvertAudioRequest_ConvertsMiMoTTSIntoChatCompletionsBody(t *testing.T
 	info := &relaycommon.RelayInfo{
 		RelayMode: relayconstant.RelayModeAudioSpeech,
 		ChannelMeta: &relaycommon.ChannelMeta{
-			UpstreamModelName: "mimo-v2-tts",
+			UpstreamModelName: "mimo-v2.5-tts",
 		},
 	}
 
 	bodyReader, err := adaptor.ConvertAudioRequest(ctx, info, dto.AudioRequest{
-		Model:          "mimo-v2-tts",
+		Model:          "mimo-v2.5-tts",
 		Input:          "hello world",
 		Voice:          "alloy",
 		Instructions:   "Speak warmly.",
@@ -93,7 +108,7 @@ func TestConvertAudioRequest_ConvertsMiMoTTSIntoChatCompletionsBody(t *testing.T
 	var payload map[string]any
 	err = common.Unmarshal(bodyBytes, &payload)
 	require.NoError(t, err)
-	require.Equal(t, "mimo-v2-tts", payload["model"])
+	require.Equal(t, "mimo-v2.5-tts", payload["model"])
 
 	messages, ok := payload["messages"].([]any)
 	require.True(t, ok)
@@ -127,13 +142,13 @@ func TestConvertAudioRequest_MapsSpeedIntoMiMoStyleTag(t *testing.T) {
 	info := &relaycommon.RelayInfo{
 		RelayMode: relayconstant.RelayModeAudioSpeech,
 		ChannelMeta: &relaycommon.ChannelMeta{
-			UpstreamModelName: "mimo-v2-tts",
+			UpstreamModelName: "mimo-v2.5-tts",
 		},
 	}
 
 	speed := 0.95
 	bodyReader, err := adaptor.ConvertAudioRequest(ctx, info, dto.AudioRequest{
-		Model: "mimo-v2-tts",
+		Model: "mimo-v2.5-tts",
 		Input: "hello world",
 		Speed: &speed,
 	})
@@ -159,6 +174,30 @@ func TestConvertAudioRequest_MapsSpeedIntoMiMoStyleTag(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "assistant", assistantMessage["role"])
 	require.Equal(t, "<style>Slow down</style>hello world", assistantMessage["content"])
+}
+
+func TestIsMiMoChatTTSModel(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		model    string
+		expected bool
+	}{
+		{name: "v2", model: "mimo-v2-tts", expected: true},
+		{name: "v2.5", model: "mimo-v2.5-tts", expected: true},
+		{name: "version suffix", model: "mimo-v2-tts-preview", expected: true},
+		{name: "invalid version", model: "mimo-vnext-tts", expected: false},
+		{name: "other tts model", model: "gpt-4o-mini-tts", expected: false},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.expected, isMiMoChatTTSModel(tc.model))
+		})
+	}
 }
 
 func TestApplyMiMoSpeedStyle_MergesIntoExistingStyleTag(t *testing.T) {
