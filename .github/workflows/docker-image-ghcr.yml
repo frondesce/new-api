@@ -2,6 +2,8 @@ name: Publish Docker image to GHCR
 
 on:
   push:
+    branches:
+      - main
     tags:
       - '*'
   workflow_dispatch:
@@ -52,6 +54,8 @@ jobs:
 
           PUBLISH_LATEST=false
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.latest }}" = "true" ]; then
+            PUBLISH_LATEST=true
+          elif [[ "${GITHUB_REF}" == refs/heads/main ]]; then
             PUBLISH_LATEST=true
           elif [[ "${GITHUB_REF}" == refs/tags/* ]] && [[ "${IMAGE_TAG}" != *-* ]]; then
             PUBLISH_LATEST=true
