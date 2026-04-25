@@ -204,3 +204,5 @@ When working in this repo:
 - `docker-compose.yml` defaults to PostgreSQL + Redis, with MySQL example commented out.
 - `main.go` starts recurring jobs and embeds the built frontend, so changes that affect startup should be reviewed carefully.
 - The repo is cleanly structured already; prefer consistency over broad cleanup.
+- Optional upstream request scalars must preserve absent versus explicit zero/false semantics: absent JSON stays `nil` and is omitted; explicit zero/false stays a non-`nil` pointer and is sent upstream.
+- When working on tiered/dynamic billing, read `pkg/billingexpr/expr.md` first and follow its expression language, token normalization, quota conversion, and settlement patterns.
