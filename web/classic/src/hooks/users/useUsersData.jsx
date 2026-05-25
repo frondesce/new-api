@@ -35,7 +35,6 @@ export const useUsersData = () => {
   const [searching, setSearching] = useState(false);
   const [groupOptions, setGroupOptions] = useState([]);
   const [userCount, setUserCount] = useState(0);
-  const [showDeletedUsers, setShowDeletedUsers] = useState(false);
 
   // Modal states
   const [showAddUser, setShowAddUser] = useState(false);
@@ -70,26 +69,19 @@ export const useUsersData = () => {
     setUsers(users);
   };
 
-  const buildUsersQuery = (startIdx, pageSize, includeDeleted, extraParams = {}) => {
+  const buildUsersQuery = (startIdx, pageSize, extraParams = {}) => {
     const query = new URLSearchParams({
       p: String(startIdx),
       page_size: String(pageSize),
       ...extraParams,
     });
-    if (includeDeleted) {
-      query.set('include_deleted', 'true');
-    }
     return query.toString();
   };
 
   // Load users data
-  const loadUsers = async (
-    startIdx,
-    pageSize,
-    includeDeleted = showDeletedUsers,
-  ) => {
+  const loadUsers = async (startIdx, pageSize) => {
     setLoading(true);
-    const query = buildUsersQuery(startIdx, pageSize, includeDeleted);
+    const query = buildUsersQuery(startIdx, pageSize);
     const res = await API.get(`/api/user/?${query}`);
     const { success, message, data } = res.data;
     if (success) {
@@ -109,7 +101,6 @@ export const useUsersData = () => {
     pageSize,
     searchKeyword = null,
     searchGroup = null,
-    includeDeleted = showDeletedUsers,
   ) => {
     // If no parameters passed, get values from form
     if (searchKeyword === null || searchGroup === null) {
@@ -124,11 +115,11 @@ export const useUsersData = () => {
 
     if (searchKeyword === '' && searchGroup === '') {
       // If keyword is blank, load files instead
-      await loadUsers(startIdx, pageSize, includeDeleted);
+      await loadUsers(startIdx, pageSize);
       return;
     }
     setSearching(true);
-    const query = buildUsersQuery(startIdx, pageSize, includeDeleted, {
+    const query = buildUsersQuery(startIdx, pageSize, {
       keyword: searchKeyword,
       group: searchGroup,
     });
@@ -218,9 +209,9 @@ export const useUsersData = () => {
     setActivePage(page);
     const { searchKeyword, searchGroup } = getFormValues();
     if (searchKeyword === '' && searchGroup === '') {
-      loadUsers(page, pageSize, showDeletedUsers).then();
+      loadUsers(page, pageSize).then();
     } else {
-      searchUsers(page, pageSize, searchKeyword, searchGroup, showDeletedUsers).then();
+      searchUsers(page, pageSize, searchKeyword, searchGroup).then();
     }
   };
 
@@ -232,8 +223,8 @@ export const useUsersData = () => {
     const { searchKeyword, searchGroup } = getFormValues();
     const action =
       searchKeyword === '' && searchGroup === ''
-        ? loadUsers(1, size, showDeletedUsers)
-        : searchUsers(1, size, searchKeyword, searchGroup, showDeletedUsers);
+        ? loadUsers(1, size)
+        : searchUsers(1, size, searchKeyword, searchGroup);
     action.catch((reason) => {
       showError(reason);
     });
@@ -256,25 +247,10 @@ export const useUsersData = () => {
   const refresh = async (page = activePage) => {
     const { searchKeyword, searchGroup } = getFormValues();
     if (searchKeyword === '' && searchGroup === '') {
-      await loadUsers(page, pageSize, showDeletedUsers);
+      await loadUsers(page, pageSize);
     } else {
-      await searchUsers(page, pageSize, searchKeyword, searchGroup, showDeletedUsers);
+      await searchUsers(page, pageSize, searchKeyword, searchGroup);
     }
-  };
-
-  const handleShowDeletedUsersChange = async (checked) => {
-    setShowDeletedUsers(checked);
-    const { searchKeyword, searchGroup } = getFormValues();
-    if (searchKeyword === '' && searchGroup === '') {
-      await loadUsers(1, pageSize, checked);
-      return;
-    }
-    await searchUsers(1, pageSize, searchKeyword, searchGroup, checked);
-  };
-
-  const resetFilters = async () => {
-    setShowDeletedUsers(false);
-    await loadUsers(1, pageSize, false);
   };
 
   // Fetch groups data
@@ -326,7 +302,6 @@ export const useUsersData = () => {
     userCount,
     searching,
     groupOptions,
-    showDeletedUsers,
 
     // Modal state
     showAddUser,
@@ -353,10 +328,8 @@ export const useUsersData = () => {
     resetUserTwoFA,
     handlePageChange,
     handlePageSizeChange,
-    handleShowDeletedUsersChange,
     handleRow,
     refresh,
-    resetFilters,
     closeAddUser,
     closeEditUser,
     getFormValues,

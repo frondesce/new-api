@@ -1,3 +1,21 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
 import { type SVGProps } from 'react'
 import { Radio as RadioPrimitive } from '@base-ui/react/radio'
 import { RadioGroup as Radio } from '@base-ui/react/radio-group'
@@ -35,6 +53,12 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
+import {
+  sideDrawerContentClassName,
+  sideDrawerFooterClassName,
+  sideDrawerFormClassName,
+  sideDrawerHeaderClassName,
+} from '@/components/drawer-layout'
 import { useSidebar } from './ui/sidebar'
 
 const Item = RadioPrimitive.Root
@@ -70,14 +94,14 @@ export function ConfigDrawer() {
       >
         <Palette className='size-[1.2rem]' aria-hidden='true' />
       </SheetTrigger>
-      <SheetContent className='flex w-full flex-col sm:max-w-md'>
-        <SheetHeader className='pb-0 text-start'>
+      <SheetContent className={sideDrawerContentClassName('sm:max-w-md')}>
+        <SheetHeader className={sideDrawerHeaderClassName()}>
           <SheetTitle>{t('Theme Settings')}</SheetTitle>
           <SheetDescription id='config-drawer-description'>
             {t('Adjust the appearance and layout to suit your preferences.')}
           </SheetDescription>
         </SheetHeader>
-        <div className='space-y-6 overflow-y-auto px-4'>
+        <div className={sideDrawerFormClassName()}>
           <ThemeConfig />
           <PresetConfig />
           <RadiusConfig />
@@ -87,7 +111,7 @@ export function ConfigDrawer() {
           <ContentLayoutConfig />
           <DirConfig />
         </div>
-        <SheetFooter className='gap-2'>
+        <SheetFooter className={sideDrawerFooterClassName('grid-cols-1')}>
           <Button
             variant='destructive'
             onClick={handleReset}
@@ -284,7 +308,7 @@ const RADIUS_OPTIONS: {
   // CSS border-radius value used to render the visual preview corner.
   preview: string
 }[] = [
-  { value: 'default', label: 'Auto', preview: '999px' },
+  { value: 'default', label: 'Auto', preview: '1rem' },
   { value: 'none', label: '0', preview: '0' },
   { value: 'sm', label: '0.3', preview: '0.3rem' },
   { value: 'md', label: '0.5', preview: '0.5rem' },
