@@ -226,6 +226,9 @@ func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
 	channelOtherSettings, ok := common.GetContextKeyType[dto.ChannelOtherSettings](c, constant.ContextKeyChannelOtherSetting)
 	if ok {
 		channelMeta.ChannelOtherSettings = channelOtherSettings
+		if channelType == constant.ChannelTypeCustom && channelOtherSettings.IsCustomGeminiVertex() {
+			channelMeta.ApiType = constant.APITypeGemini
+		}
 	}
 
 	if streamSupportedChannels[channelMeta.ChannelType] {

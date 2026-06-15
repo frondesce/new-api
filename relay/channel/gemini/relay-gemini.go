@@ -372,6 +372,10 @@ func CovertOpenAI2Gemini(c *gin.Context, textRequest dto.GeneralOpenAIRequest, i
 		codeExecution := false
 		urlContext := false
 		for _, tool := range textRequest.Tools {
+			if tool.GoogleSearch != nil {
+				googleSearch = true
+				continue
+			}
 			if tool.Function.Name == "googleSearch" {
 				googleSearch = true
 				continue
@@ -426,7 +430,7 @@ func CovertOpenAI2Gemini(c *gin.Context, textRequest dto.GeneralOpenAIRequest, i
 		// [NEW] Convert OpenAI tool_choice to Gemini toolConfig.functionCallingConfig
 		// Mapping: "auto" -> "AUTO", "none" -> "NONE", "required" -> "ANY"
 		// Object format: {"type": "function", "function": {"name": "xxx"}} -> "ANY" + allowedFunctionNames
-		if textRequest.ToolChoice != nil {
+		if textRequest.ToolChoice != nil && len(functions) > 0 {
 			geminiRequest.ToolConfig = convertToolChoiceToGeminiConfig(textRequest.ToolChoice)
 		}
 	}

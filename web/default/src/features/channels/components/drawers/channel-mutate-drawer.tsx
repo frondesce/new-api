@@ -371,6 +371,7 @@ export function ChannelMutateDrawer({
   const currentModelMapping = form.watch('model_mapping')
   const awsKeyType = form.watch('aws_key_type')
   const vertexKeyType = form.watch('vertex_key_type')
+  const customProtocol = form.watch('custom_protocol')
   const upstreamModelUpdateCheckEnabled = form.watch(
     'upstream_model_update_check_enabled'
   )
@@ -1282,33 +1283,98 @@ export function ChannelMutateDrawer({
 
                     {/* Custom (type 8) */}
                     {currentType === 8 && (
-                      <FormField
-                        control={form.control}
-                        name='base_url'
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>
-                              {t('Full Base URL (supports')} {'{'}
-                              {t('model')}
-                              {'}'} {t('variable) *')}
-                            </FormLabel>
-                            <FormControl>
-                              <Input
-                                placeholder={t(
-                                  'e.g., https://api.openai.com/v1/chat/completions'
-                                )}
-                                {...field}
-                              />
-                            </FormControl>
-                            <FormDescription>
-                              {t('Enter the complete URL, supports')} {'{'}
-                              {t('model')}
-                              {'}'} {t('variable')}
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                      <>
+                        <FormField
+                          control={form.control}
+                          name='custom_protocol'
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>{t('Upstream Protocol')}</FormLabel>
+                              <Select
+                                items={[
+                                  {
+                                    value: 'openai',
+                                    label: t('OpenAI Compatible'),
+                                  },
+                                  {
+                                    value: 'gemini_vertex',
+                                    label: t('Gemini / Vertex AI Native'),
+                                  },
+                                ]}
+                                onValueChange={field.onChange}
+                                value={field.value}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent alignItemWithTrigger={false}>
+                                  <SelectGroup>
+                                    <SelectItem value='openai'>
+                                      {t('OpenAI Compatible')}
+                                    </SelectItem>
+                                    <SelectItem value='gemini_vertex'>
+                                      {t('Gemini / Vertex AI Native')}
+                                    </SelectItem>
+                                  </SelectGroup>
+                                </SelectContent>
+                              </Select>
+                              <FormDescription>
+                                {customProtocol === 'gemini_vertex'
+                                  ? t(
+                                      'Converts OpenAI requests to Gemini/Vertex native format for custom provider endpoints'
+                                    )
+                                  : t(
+                                      'OpenAI-compatible request and response format'
+                                    )}
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name='base_url'
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>
+                                {customProtocol === 'gemini_vertex'
+                                  ? t(
+                                      'Full Request URL (supports {model} and {action} variables) *'
+                                    )
+                                  : `${t('Full Base URL (supports')} {${t(
+                                      'model'
+                                    )}} ${t('variable) *')}`}
+                              </FormLabel>
+                              <FormControl>
+                                <Input
+                                  placeholder={
+                                    customProtocol === 'gemini_vertex'
+                                      ? t(
+                                          'e.g., https://gateway.example.com/provider/v1/projects/project/locations/global/publishers/google/models/{model}:{action}'
+                                        )
+                                      : t(
+                                          'e.g., https://api.openai.com/v1/chat/completions'
+                                        )
+                                  }
+                                  {...field}
+                                />
+                              </FormControl>
+                              <FormDescription>
+                                {customProtocol === 'gemini_vertex'
+                                  ? t(
+                                      'Use {model} for the mapped model and {action} for generateContent or streamGenerateContent. Configure provider authentication with Request Header Override.'
+                                    )
+                                  : `${t('Enter the complete URL, supports')} {${t(
+                                      'model'
+                                    )}} ${t('variable')}`}
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </>
                     )}
 
                     {/* Xunfei/Spark (type 18) */}

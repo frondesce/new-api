@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/openai"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
-	"github.com/QuantumNous/new-api/relay/constant"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/QuantumNous/new-api/types"
@@ -128,7 +130,6 @@ func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 }
 
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
-
 	if model_setting.GetGeminiSettings().ThinkingAdapterEnabled &&
 		!model_setting.ShouldPreserveThinkingSuffix(info.OriginModelName) {
 		// 新增逻辑：处理 -thinking-<budget> 格式
@@ -142,6 +143,10 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 		} else if baseModel, level, ok := reasoning.TrimEffortSuffix(info.UpstreamModelName); ok && level != "" {
 			info.UpstreamModelName = baseModel
 		}
+	}
+
+	if info.ChannelType == constant.ChannelTypeCustom && info.ChannelOtherSettings.IsCustomGeminiVertex() {
+		return getCustomGeminiVertexRequestURL(info)
 	}
 
 	version := model_setting.GetGeminiVersionSetting(info.UpstreamModelName)
@@ -163,15 +168,63 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 	action := "generateContent"
 	if info.IsStream {
 		action = "streamGenerateContent?alt=sse"
-		if info.RelayMode == constant.RelayModeGemini {
+		if info.RelayMode == relayconstant.RelayModeGemini {
 			info.DisablePing = true
 		}
 	}
 	return fmt.Sprintf("%s/%s/models/%s:%s", info.ChannelBaseUrl, version, info.UpstreamModelName, action), nil
 }
 
+func getCustomGeminiVertexRequestURL(info *relaycommon.RelayInfo) (string, error) {
+	requestURL := strings.TrimSpace(info.ChannelBaseUrl)
+	if requestURL == "" {
+		return "", errors.New("custom Gemini Vertex URL is required")
+	}
+
+	action := "generateContent"
+	if info.IsStream {
+		action = "streamGenerateContent"
+		if info.RelayMode == relayconstant.RelayModeGemini {
+			info.DisablePing = true
+		}
+	}
+
+	requestURL = strings.ReplaceAll(requestURL, "{model}", url.PathEscape(info.UpstreamModelName))
+	if strings.Contains(requestURL, "{action}") {
+		requestURL = strings.ReplaceAll(requestURL, "{action}", action)
+	} else if info.IsStream {
+		requestURL = strings.Replace(requestURL, ":generateContent", ":streamGenerateContent", 1)
+	}
+
+	if strings.Contains(requestURL, "{model}") || strings.Contains(requestURL, "{action}") {
+		return "", errors.New("custom Gemini Vertex URL contains unresolved variables")
+	}
+
+	parsedURL, err := url.Parse(requestURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid custom Gemini Vertex URL: %w", err)
+	}
+	if parsedURL.Scheme == "" || parsedURL.Host == "" {
+		return "", errors.New("custom Gemini Vertex URL must be an absolute URL")
+	}
+	if !strings.HasSuffix(parsedURL.EscapedPath(), ":"+action) {
+		return "", fmt.Errorf("custom Gemini Vertex URL path must target :%s", action)
+	}
+
+	if info.IsStream {
+		query := parsedURL.Query()
+		query.Set("alt", "sse")
+		parsedURL.RawQuery = query.Encode()
+	}
+
+	return parsedURL.String(), nil
+}
+
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) error {
 	channel.SetupApiRequestHeader(info, c, req)
+	if info.ChannelType == constant.ChannelTypeCustom && info.ChannelOtherSettings.IsCustomGeminiVertex() {
+		return nil
+	}
 	req.Set("x-goog-api-key", info.ApiKey)
 	return nil
 }
@@ -247,7 +300,7 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 }
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (usage any, err *types.NewAPIError) {
-	if info.RelayMode == constant.RelayModeGemini {
+	if info.RelayMode == relayconstant.RelayModeGemini {
 		if strings.Contains(info.RequestURLPath, ":embedContent") ||
 			strings.Contains(info.RequestURLPath, ":batchEmbedContents") {
 			return NativeGeminiEmbeddingHandler(c, resp, info)

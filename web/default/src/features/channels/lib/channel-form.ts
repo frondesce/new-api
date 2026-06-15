@@ -185,6 +185,7 @@ export const channelFormSchema = z
     // Type-specific settings (stored in settings JSON)
     is_enterprise_account: z.boolean().optional(), // OpenRouter specific
     vertex_key_type: z.enum(['json', 'api_key']).optional(), // Vertex AI specific
+    custom_protocol: z.enum(['openai', 'gemini_vertex']).optional(), // Custom channel protocol
     aws_key_type: z.enum(['ak_sk', 'api_key']).optional(), // AWS specific
     azure_responses_version: z.string().optional(), // Azure specific
     // Field passthrough controls (stored in settings JSON)
@@ -303,6 +304,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   // Type-specific settings
   is_enterprise_account: false,
   vertex_key_type: 'json',
+  custom_protocol: 'openai',
   aws_key_type: 'ak_sk',
   azure_responses_version: '',
   // Field passthrough controls
@@ -357,6 +359,7 @@ export function transformChannelToFormDefaults(
 
   // Parse type-specific settings from settings field
   let vertexKeyType: 'json' | 'api_key' = 'json'
+  let customProtocol: 'openai' | 'gemini_vertex' = 'openai'
   let azureResponsesVersion = ''
   let isEnterpriseAccount = false
   let awsKeyType: 'ak_sk' | 'api_key' = 'ak_sk'
@@ -375,6 +378,7 @@ export function transformChannelToFormDefaults(
     try {
       const parsed = JSON.parse(channel.settings)
       vertexKeyType = parsed.vertex_key_type || 'json'
+      customProtocol = parsed.custom_protocol || 'openai'
       azureResponsesVersion = parsed.azure_responses_version || ''
       isEnterpriseAccount = parsed.openrouter_enterprise === true
       awsKeyType = parsed.aws_key_type || 'ak_sk'
@@ -431,6 +435,7 @@ export function transformChannelToFormDefaults(
     // Type-specific settings
     is_enterprise_account: isEnterpriseAccount,
     vertex_key_type: vertexKeyType,
+    custom_protocol: customProtocol,
     azure_responses_version: azureResponsesVersion,
     aws_key_type: awsKeyType,
     allow_service_tier: allowServiceTier,
@@ -482,6 +487,13 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     settingsObj.vertex_key_type = formData.vertex_key_type || 'json'
   } else if ('vertex_key_type' in settingsObj) {
     delete settingsObj.vertex_key_type
+  }
+
+  // Add protocol selection for custom channels (type 8)
+  if (formData.type === 8) {
+    settingsObj.custom_protocol = formData.custom_protocol || 'openai'
+  } else if ('custom_protocol' in settingsObj) {
+    delete settingsObj.custom_protocol
   }
 
   // Add azure_responses_version for Azure channels (type 3)

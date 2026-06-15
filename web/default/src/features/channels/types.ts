@@ -91,6 +91,7 @@ export interface ChannelSettings {
 export interface ChannelOtherSettings {
   azure_responses_version?: string
   vertex_key_type?: 'json' | 'api_key'
+  custom_protocol?: 'openai' | 'gemini_vertex'
   openrouter_enterprise?: boolean
   aws_key_type?: 'ak_sk' | 'api_key'
   allow_service_tier?: boolean
