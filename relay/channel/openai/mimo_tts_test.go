@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -46,6 +47,23 @@ func TestGetRequestURL_UsesChatCompletionsForMiMoAudioSpeech(t *testing.T) {
 			require.Equal(t, "https://api.xiaomimimo.com/v1/chat/completions", url)
 		})
 	}
+}
+
+func TestGetRequestURL_CustomChannelRejectsUnresolvedActionPlaceholder(t *testing.T) {
+	t.Parallel()
+
+	adaptor := &Adaptor{}
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelType:       constant.ChannelTypeCustom,
+			ChannelBaseUrl:    "https://gateway.example.com/models/{model}:{action}",
+			UpstreamModelName: "gemini-future-model",
+		},
+	}
+
+	_, err := adaptor.GetRequestURL(info)
+
+	require.ErrorContains(t, err, "select the Gemini / Vertex AI Native upstream protocol")
 }
 
 func TestSetupRequestHeader_UsesAPIKeyForMiMoTTS(t *testing.T) {

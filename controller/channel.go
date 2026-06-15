@@ -476,6 +476,13 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 		}
 	}
 
+	if channel.Type == constant.ChannelTypeCustom && channel.BaseURL != nil {
+		baseURL := strings.TrimSpace(*channel.BaseURL)
+		if strings.Contains(baseURL, "{action}") && !channel.GetOtherSettings().IsCustomGeminiVertex() {
+			return fmt.Errorf("自定义渠道 URL 使用了 {action}，请将上游协议设置为 Gemini / Vertex AI 原生")
+		}
+	}
+
 	// VertexAI 特殊校验
 	if channel.Type == constant.ChannelTypeVertexAi {
 		if channel.Other == "" {

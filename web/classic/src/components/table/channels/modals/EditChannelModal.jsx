@@ -195,6 +195,8 @@ const EditChannelModal = (props) => {
     system_prompt: '',
     system_prompt_override: false,
     settings: '',
+    // 仅自定义渠道: 上游协议（存入 settings.custom_protocol）
+    custom_protocol: 'openai',
     // 仅 Vertex: 密钥格式（存入 settings.vertex_key_type）
     vertex_key_type: 'json',
     // 仅 AWS: 密钥格式和区域（存入 settings.aws_key_type 和 settings.aws_region）
@@ -891,6 +893,7 @@ const EditChannelModal = (props) => {
           const parsedSettings = JSON.parse(data.settings);
           data.azure_responses_version =
             parsedSettings.azure_responses_version || '';
+          data.custom_protocol = parsedSettings.custom_protocol || 'openai';
           // 读取 Vertex 密钥格式
           data.vertex_key_type = parsedSettings.vertex_key_type || 'json';
           // 读取 AWS 密钥格式和区域
@@ -929,6 +932,7 @@ const EditChannelModal = (props) => {
           console.error('解析其他设置失败:', error);
           data.azure_responses_version = '';
           data.region = '';
+          data.custom_protocol = 'openai';
           data.vertex_key_type = 'json';
           data.aws_key_type = 'ak_sk';
           data.is_enterprise_account = false;
@@ -947,6 +951,7 @@ const EditChannelModal = (props) => {
         }
       } else {
         // 兼容历史数据：老渠道没有 settings 时，默认按 json 展示
+        data.custom_protocol = 'openai';
         data.vertex_key_type = 'json';
         data.aws_key_type = 'ak_sk';
         data.is_enterprise_account = false;
@@ -1778,6 +1783,13 @@ const EditChannelModal = (props) => {
       delete settings.vertex_key_type;
     }
 
+    // type === 8 (自定义渠道): 保存上游协议
+    if (localInputs.type === 8) {
+      settings.custom_protocol = localInputs.custom_protocol || 'openai';
+    } else if ('custom_protocol' in settings) {
+      delete settings.custom_protocol;
+    }
+
     // type === 1 (OpenAI) 或 type === 14 (Claude): 设置字段透传控制（显式保存布尔值）
     if (localInputs.type === 1 || localInputs.type === 14) {
       settings.allow_service_tier = localInputs.allow_service_tier === true;
@@ -1833,6 +1845,8 @@ const EditChannelModal = (props) => {
     delete localInputs.vertex_key_type;
     // 顶层的 aws_key_type 不应发送给后端
     delete localInputs.aws_key_type;
+    // 顶层的 custom_protocol 不应发送给后端
+    delete localInputs.custom_protocol;
     // 清理字段透传控制的临时字段
     delete localInputs.allow_service_tier;
     delete localInputs.disable_store;
@@ -3304,18 +3318,64 @@ const EditChannelModal = (props) => {
                             )}
                             className='!rounded-lg'
                           />
+                          <Form.Select
+                            field='custom_protocol'
+                            label={t('上游协议')}
+                            optionList={[
+                              {
+                                label: t('OpenAI 兼容'),
+                                value: 'openai',
+                              },
+                              {
+                                label: t('Gemini / Vertex AI 原生'),
+                                value: 'gemini_vertex',
+                              },
+                            ]}
+                            style={{ width: '100%' }}
+                            value={inputs.custom_protocol || 'openai'}
+                            onChange={(value) =>
+                              handleChannelOtherSettingsChange(
+                                'custom_protocol',
+                                value,
+                              )
+                            }
+                            extraText={
+                              inputs.custom_protocol === 'gemini_vertex'
+                                ? t(
+                                    '将 OpenAI 请求转换为 Gemini/Vertex 原生格式',
+                                  )
+                                : t('使用 OpenAI 兼容的请求和响应格式')
+                            }
+                          />
                           <div>
                             <Form.Input
                               field='base_url'
-                              label={t('完整的 Base URL，支持变量{model}')}
-                              placeholder={t(
-                                '请输入完整的URL，例如：https://api.openai.com/v1/chat/completions',
-                              )}
+                              label={
+                                inputs.custom_protocol === 'gemini_vertex'
+                                  ? t(
+                                      '完整请求 URL，支持变量{model}和{action}',
+                                    )
+                                  : t('完整的 Base URL，支持变量{model}')
+                              }
+                              placeholder={
+                                inputs.custom_protocol === 'gemini_vertex'
+                                  ? 'https://gateway.example.com/provider/v1/projects/project/locations/global/publishers/google/models/{model}:{action}'
+                                  : t(
+                                      '请输入完整的URL，例如：https://api.openai.com/v1/chat/completions',
+                                    )
+                              }
                               onChange={(value) =>
                                 handleInputChange('base_url', value)
                               }
                               showClear
                               disabled={isIonetLocked}
+                              extraText={
+                                inputs.custom_protocol === 'gemini_vertex'
+                                  ? t(
+                                      '使用{model}表示映射后的模型，使用{action}表示generateContent或streamGenerateContent',
+                                    )
+                                  : undefined
+                              }
                             />
                           </div>
                         </>

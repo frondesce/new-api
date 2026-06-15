@@ -173,6 +173,9 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 	//	return minimax.GetRequestURL(info)
 	case constant.ChannelTypeCustom:
 		url := info.ChannelBaseUrl
+		if strings.Contains(url, "{action}") {
+			return "", errors.New("custom channel URL contains {action}; select the Gemini / Vertex AI Native upstream protocol")
+		}
 		url = strings.Replace(url, "{model}", info.UpstreamModelName, -1)
 		return url, nil
 	default:
