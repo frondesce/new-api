@@ -228,7 +228,13 @@ func TestGeminiStreamResponseIncludesGroundingAnnotations(t *testing.T) {
 						},
 						{
 							Web: &dto.GeminiGroundingWeb{
-								URI: "https://example.com/untitled",
+								URI:    "https://example.com/domain-only",
+								Domain: "example.com",
+							},
+						},
+						{
+							Web: &dto.GeminiGroundingWeb{
+								URI: "https://example.com/url-only",
 							},
 						},
 					},
@@ -242,12 +248,14 @@ func TestGeminiStreamResponseIncludesGroundingAnnotations(t *testing.T) {
 	require.True(t, isStop)
 	require.Len(t, converted.Choices, 1)
 	require.Equal(t, "Grounded stream answer.", converted.Choices[0].Delta.GetContentString())
-	require.Len(t, converted.Choices[0].Delta.Annotations, 2)
+	require.Len(t, converted.Choices[0].Delta.Annotations, 3)
 	require.Equal(t, "url_citation", converted.Choices[0].Delta.Annotations[0].Type)
 	require.Equal(t, "https://example.com/source", converted.Choices[0].Delta.Annotations[0].URLCitation.URL)
 	require.Equal(t, "Example source", converted.Choices[0].Delta.Annotations[0].URLCitation.Title)
-	require.Equal(t, "https://example.com/untitled", converted.Choices[0].Delta.Annotations[1].URLCitation.URL)
-	require.Equal(t, "https://example.com/untitled", converted.Choices[0].Delta.Annotations[1].URLCitation.Title)
+	require.Equal(t, "https://example.com/domain-only", converted.Choices[0].Delta.Annotations[1].URLCitation.URL)
+	require.Equal(t, "example.com", converted.Choices[0].Delta.Annotations[1].URLCitation.Title)
+	require.Equal(t, "https://example.com/url-only", converted.Choices[0].Delta.Annotations[2].URLCitation.URL)
+	require.Equal(t, "https://example.com/url-only", converted.Choices[0].Delta.Annotations[2].URLCitation.Title)
 
 	jsonData, err := appcommon.Marshal(converted)
 	require.NoError(t, err)

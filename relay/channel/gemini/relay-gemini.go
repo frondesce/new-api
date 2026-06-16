@@ -1037,6 +1037,9 @@ func geminiGroundingAnnotations(candidate *dto.GeminiChatCandidate) []dto.OpenAI
 
 		title := strings.TrimSpace(chunk.Web.Title)
 		if title == "" {
+			title = strings.TrimSpace(chunk.Web.Domain)
+		}
+		if title == "" {
 			title = url
 		}
 		annotations = append(annotations, dto.OpenAIAnnotation{

@@ -449,8 +449,9 @@ type GeminiGroundingChunk struct {
 }
 
 type GeminiGroundingWeb struct {
-	URI   string `json:"uri,omitempty"`
-	Title string `json:"title,omitempty"`
+	URI    string `json:"uri,omitempty"`
+	Title  string `json:"title,omitempty"`
+	Domain string `json:"domain,omitempty"`
 }
 
 type GeminiGroundingSupport struct {
