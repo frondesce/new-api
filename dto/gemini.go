@@ -44,9 +44,9 @@ func (r *GeminiChatRequest) UnmarshalJSON(data []byte) error {
 }
 
 type ToolConfig struct {
-	FunctionCallingConfig *FunctionCallingConfig `json:"functionCallingConfig,omitempty"`
-	RetrievalConfig       *RetrievalConfig       `json:"retrievalConfig,omitempty"`
-	IncludeServerSideToolInvocations *bool       `json:"includeServerSideToolInvocations,omitempty"`
+	FunctionCallingConfig            *FunctionCallingConfig `json:"functionCallingConfig,omitempty"`
+	RetrievalConfig                  *RetrievalConfig       `json:"retrievalConfig,omitempty"`
+	IncludeServerSideToolInvocations *bool                  `json:"includeServerSideToolInvocations,omitempty"`
 }
 
 type FunctionCallingConfig struct {
@@ -437,11 +437,32 @@ func (c *GeminiChatGenerationConfig) UnmarshalJSON(data []byte) error {
 
 type MediaResolution string
 
+type GeminiGroundingMetadata struct {
+	GroundingChunks   []GeminiGroundingChunk   `json:"groundingChunks,omitempty"`
+	GroundingSupports []GeminiGroundingSupport `json:"groundingSupports,omitempty"`
+	WebSearchQueries  []string                 `json:"webSearchQueries,omitempty"`
+	SearchEntryPoint  json.RawMessage          `json:"searchEntryPoint,omitempty"`
+}
+
+type GeminiGroundingChunk struct {
+	Web *GeminiGroundingWeb `json:"web,omitempty"`
+}
+
+type GeminiGroundingWeb struct {
+	URI   string `json:"uri,omitempty"`
+	Title string `json:"title,omitempty"`
+}
+
+type GeminiGroundingSupport struct {
+	GroundingChunkIndices []int `json:"groundingChunkIndices,omitempty"`
+}
+
 type GeminiChatCandidate struct {
-	Content       GeminiChatContent        `json:"content"`
-	FinishReason  *string                  `json:"finishReason"`
-	Index         int64                    `json:"index"`
-	SafetyRatings []GeminiChatSafetyRating `json:"safetyRatings"`
+	Content           GeminiChatContent        `json:"content"`
+	FinishReason      *string                  `json:"finishReason"`
+	Index             int64                    `json:"index"`
+	SafetyRatings     []GeminiChatSafetyRating `json:"safetyRatings"`
+	GroundingMetadata *GeminiGroundingMetadata `json:"groundingMetadata,omitempty"`
 }
 
 type GeminiChatSafetyRating struct {

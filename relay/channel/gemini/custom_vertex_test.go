@@ -193,4 +193,64 @@ func TestGeminiChatHandlerKeepsGroundedAnswerContent(t *testing.T) {
 	require.NoError(t, appcommon.Unmarshal(recorder.Body.Bytes(), &converted))
 	require.Len(t, converted.Choices, 1)
 	require.Equal(t, "Grounded answer from current search results.", converted.Choices[0].Message.StringContent())
+	require.Len(t, converted.Choices[0].Message.Annotations, 1)
+	require.Equal(t, "url_citation", converted.Choices[0].Message.Annotations[0].Type)
+	require.Equal(t, "https://example.com/source", converted.Choices[0].Message.Annotations[0].URLCitation.URL)
+	require.Equal(t, "Example source", converted.Choices[0].Message.Annotations[0].URLCitation.Title)
+}
+
+func TestGeminiStreamResponseIncludesGroundingAnnotations(t *testing.T) {
+	stop := "STOP"
+	geminiResponse := &dto.GeminiChatResponse{
+		Candidates: []dto.GeminiChatCandidate{
+			{
+				Content: dto.GeminiChatContent{
+					Role: "model",
+					Parts: []dto.GeminiPart{
+						{Text: "Grounded stream answer."},
+					},
+				},
+				FinishReason: &stop,
+				Index:        0,
+				GroundingMetadata: &dto.GeminiGroundingMetadata{
+					GroundingChunks: []dto.GeminiGroundingChunk{
+						{
+							Web: &dto.GeminiGroundingWeb{
+								URI:   "https://example.com/source",
+								Title: "Example source",
+							},
+						},
+						{
+							Web: &dto.GeminiGroundingWeb{
+								URI:   "https://example.com/source",
+								Title: "Duplicate source",
+							},
+						},
+						{
+							Web: &dto.GeminiGroundingWeb{
+								URI: "https://example.com/untitled",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	converted, isStop := streamResponseGeminiChat2OpenAI(geminiResponse)
+
+	require.True(t, isStop)
+	require.Len(t, converted.Choices, 1)
+	require.Equal(t, "Grounded stream answer.", converted.Choices[0].Delta.GetContentString())
+	require.Len(t, converted.Choices[0].Delta.Annotations, 2)
+	require.Equal(t, "url_citation", converted.Choices[0].Delta.Annotations[0].Type)
+	require.Equal(t, "https://example.com/source", converted.Choices[0].Delta.Annotations[0].URLCitation.URL)
+	require.Equal(t, "Example source", converted.Choices[0].Delta.Annotations[0].URLCitation.Title)
+	require.Equal(t, "https://example.com/untitled", converted.Choices[0].Delta.Annotations[1].URLCitation.URL)
+	require.Equal(t, "https://example.com/untitled", converted.Choices[0].Delta.Annotations[1].URLCitation.Title)
+
+	jsonData, err := appcommon.Marshal(converted)
+	require.NoError(t, err)
+	require.Contains(t, string(jsonData), `"annotations"`)
+	require.Contains(t, string(jsonData), `"url_citation"`)
 }

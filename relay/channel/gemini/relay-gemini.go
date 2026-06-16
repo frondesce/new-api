@@ -1015,6 +1015,41 @@ func getResponseToolCall(item *dto.GeminiPart) *dto.ToolCallResponse {
 	}
 }
 
+func geminiGroundingAnnotations(candidate *dto.GeminiChatCandidate) []dto.OpenAIAnnotation {
+	if candidate == nil || candidate.GroundingMetadata == nil {
+		return nil
+	}
+
+	annotations := make([]dto.OpenAIAnnotation, 0, len(candidate.GroundingMetadata.GroundingChunks))
+	seenURLs := make(map[string]struct{}, len(candidate.GroundingMetadata.GroundingChunks))
+	for _, chunk := range candidate.GroundingMetadata.GroundingChunks {
+		if chunk.Web == nil {
+			continue
+		}
+		url := strings.TrimSpace(chunk.Web.URI)
+		if url == "" {
+			continue
+		}
+		if _, ok := seenURLs[url]; ok {
+			continue
+		}
+		seenURLs[url] = struct{}{}
+
+		title := strings.TrimSpace(chunk.Web.Title)
+		if title == "" {
+			title = url
+		}
+		annotations = append(annotations, dto.OpenAIAnnotation{
+			Type: "url_citation",
+			URLCitation: dto.OpenAIURLCitation{
+				URL:   url,
+				Title: title,
+			},
+		})
+	}
+	return annotations
+}
+
 func buildUsageFromGeminiMetadata(metadata dto.GeminiUsageMetadata, fallbackPromptTokens int) dto.Usage {
 	promptTokens := metadata.PromptTokenCount + metadata.ToolUsePromptTokenCount
 	if promptTokens <= 0 && fallbackPromptTokens > 0 {
@@ -1081,6 +1116,9 @@ func responseGeminiChat2OpenAI(c *gin.Context, response *dto.GeminiChatResponse)
 				Content: "",
 			},
 			FinishReason: constant.FinishReasonStop,
+		}
+		if annotations := geminiGroundingAnnotations(&candidate); len(annotations) > 0 {
+			choice.Message.Annotations = annotations
 		}
 		if len(candidate.Content.Parts) > 0 {
 			// 使用 strings.Builder 直接累积最终 content，避免:
@@ -1211,6 +1249,9 @@ func streamResponseGeminiChat2OpenAI(geminiResponse *dto.GeminiChatResponse) (*d
 			Delta: dto.ChatCompletionsStreamResponseChoiceDelta{
 				//Role: "assistant",
 			},
+		}
+		if annotations := geminiGroundingAnnotations(&candidate); len(annotations) > 0 {
+			choice.Delta.Annotations = annotations
 		}
 		// 使用 strings.Builder 直接累积 delta content，避免每张 image / 每个
 		// 文本片段都先 `+` 拼出一份临时 string，再 strings.Join 再拷贝一遍。

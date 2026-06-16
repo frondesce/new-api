@@ -91,6 +91,7 @@ type ChatCompletionsStreamResponseChoiceDelta struct {
 	Reasoning        *string            `json:"reasoning,omitempty"`
 	Role             string             `json:"role,omitempty"`
 	ToolCalls        []ToolCallResponse `json:"tool_calls,omitempty"`
+	Annotations      []OpenAIAnnotation `json:"annotations,omitempty"`
 }
 
 func (c *ChatCompletionsStreamResponseChoiceDelta) SetContentString(s string) {
@@ -137,6 +138,18 @@ type FunctionResponse struct {
 	// call function with arguments in JSON format
 	Parameters any    `json:"parameters,omitempty"` // request
 	Arguments  string `json:"arguments"`            // response
+}
+
+type OpenAIAnnotation struct {
+	Type        string            `json:"type"`
+	URLCitation OpenAIURLCitation `json:"url_citation,omitempty"`
+}
+
+type OpenAIURLCitation struct {
+	URL        string `json:"url"`
+	Title      string `json:"title,omitempty"`
+	StartIndex *int   `json:"start_index,omitempty"`
+	EndIndex   *int   `json:"end_index,omitempty"`
 }
 
 type ChatCompletionsStreamResponse struct {
