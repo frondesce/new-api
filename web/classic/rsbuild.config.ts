@@ -43,6 +43,7 @@ export default defineConfig(({ envMode }) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
+        'date-fns': path.resolve(semiUiDir, 'node_modules/date-fns'),
         '@douyinfe/semi-ui/dist/css/semi.css': path.resolve(
           semiUiDir,
           'dist/css/semi.css',
