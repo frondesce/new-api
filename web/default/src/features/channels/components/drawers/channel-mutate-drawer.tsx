@@ -2309,6 +2309,9 @@ export function ChannelMutateDrawer({
                                   createLabel='Add custom model "{{value}}"'
                                   maxVisibleChips={8}
                                   copyChipOnClick
+                                  caseSensitiveCreateMatch={
+                                    currentType === CHANNEL_TYPE_ADVANCED_CUSTOM
+                                  }
                                 />
                               </FormControl>
                               {modelMappingGuardrail.exposedTargetModels

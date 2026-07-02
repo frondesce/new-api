@@ -76,6 +76,7 @@ interface MultiSelectProps {
    * instead of being inert. The remove (×) button keeps its own behaviour.
    */
   copyChipOnClick?: boolean
+  caseSensitiveCreateMatch?: boolean
 }
 
 const COMMA_REGEX = /[,，\n]/
@@ -139,13 +140,16 @@ export function MultiSelect(props: MultiSelectProps) {
   }, [props.options])
 
   const trimmedInput = inputValue.trim()
+  const normalizedInput = trimmedInput.toLowerCase()
   const inputMatchesExisting =
     trimmedInput.length > 0 &&
     (selectedSet.has(trimmedInput) ||
       props.options.some(
         (option) =>
-          option.value.toLowerCase() === trimmedInput.toLowerCase() ||
-          option.label.toLowerCase() === trimmedInput.toLowerCase()
+          props.caseSensitiveCreateMatch
+            ? option.value === trimmedInput || option.label === trimmedInput
+            : option.value.toLowerCase() === normalizedInput ||
+              option.label.toLowerCase() === normalizedInput
       ))
 
   const canCreate =
@@ -162,9 +166,9 @@ export function MultiSelect(props: MultiSelectProps) {
       set.add(value)
     }
     if (canCreate) {
-      set.add(trimmedInput)
+      return [trimmedInput, ...set]
     }
-    return Array.from(set)
+    return [...set]
   }, [props.options, props.selected, canCreate, trimmedInput])
 
   const addValues = React.useCallback(
