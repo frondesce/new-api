@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service/relayconvert"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -135,7 +136,7 @@ func TestNativeGoogleSearchToolConvertsToGeminiGoogleSearch(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, request.Tools[0].GoogleSearch)
 
-	converted, err := CovertOpenAI2Gemini(c, request, customGeminiVertexInfo(false))
+	converted, err := relayconvert.OpenAIChatRequestToGeminiGenerateContent(c, request, customGeminiVertexInfo(false))
 
 	require.NoError(t, err)
 	tools := converted.GetTools()
