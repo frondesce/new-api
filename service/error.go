@@ -84,6 +84,10 @@ func ClaudeErrorWrapperLocal(err error, code string, statusCode int) *dto.Claude
 }
 
 func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFail bool) (newApiErr *types.NewAPIError) {
+	defer func() {
+		newApiErr = normalizeUpstreamRateLimitError(newApiErr)
+	}()
+
 	newApiErr = types.InitOpenAIError(types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
 
 	responseBody, err := io.ReadAll(resp.Body)
@@ -128,6 +132,74 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 		newApiErr.Err = buildErrWithBody(newApiErr.Error())
 	}
 	return
+}
+
+func normalizeUpstreamRateLimitError(newApiErr *types.NewAPIError) *types.NewAPIError {
+	if newApiErr == nil || newApiErr.StatusCode != http.StatusTooManyRequests {
+		return newApiErr
+	}
+
+	openAIError := newApiErr.ToOpenAIError()
+	originalMessage := strings.TrimSpace(newApiErr.Error())
+	classificationText := strings.ToLower(strings.Join([]string{
+		originalMessage,
+		openAIError.Type,
+		fmt.Sprintf("%v", openAIError.Code),
+	}, " "))
+
+	if isUpstreamQuotaExhausted(classificationText) {
+		return types.WithOpenAIError(types.OpenAIError{
+			Message:  prependErrorClassification("quota exceeded", originalMessage),
+			Type:     "insufficient_quota",
+			Code:     "insufficient_quota",
+			Metadata: openAIError.Metadata,
+		}, http.StatusTooManyRequests, types.ErrOptionWithSkipRetry())
+	}
+
+	openAIError.Message = prependErrorClassification("rate limit", originalMessage)
+	if openAIError.Type == "" || openAIError.Type == "upstream_error" {
+		openAIError.Type = "rate_limit_error"
+	}
+	if openAIError.Code == nil || openAIError.Code == "" || openAIError.Code == "unknown_error" || openAIError.Code == types.ErrorCodeBadResponseStatusCode {
+		openAIError.Code = "rate_limit_exceeded"
+	}
+	return types.WithOpenAIError(openAIError, http.StatusTooManyRequests)
+}
+
+func isUpstreamQuotaExhausted(message string) bool {
+	quotaMarkers := []string{
+		"insufficient_quota",
+		"insufficient quota",
+		"quota exceeded",
+		"quota_exceeded",
+		"quota exhausted",
+		"out of credits",
+		"credit balance is too low",
+		"subscription quota",
+		"配额不足",
+		"额度不足",
+		"余额不足",
+		"配额已用完",
+		"额度已用完",
+		"配额耗尽",
+		"额度耗尽",
+	}
+	for _, marker := range quotaMarkers {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func prependErrorClassification(classification string, message string) string {
+	if message == "" {
+		return classification
+	}
+	if strings.Contains(strings.ToLower(message), classification) {
+		return message
+	}
+	return classification + ": " + message
 }
 
 func ResetStatusCode(newApiErr *types.NewAPIError, statusCodeMappingStr string) {
