@@ -217,19 +217,26 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, header *http.Header, info *
 	// 不要再额外注入默认 Authorization，避免同时发送两套鉴权信息。
 	hasAuthOverride := shouldSkipDefaultAuthorizationHeader(info.HeadersOverride)
 	if info.RelayMode == relayconstant.RelayModeRealtime {
+		// OpenAI 已下线 Realtime Beta API,GA 模型收到 beta 标识会以 beta_api_shape_disabled 拒绝;
+		// 仅对遗留 preview 模型保留 beta 标识
+		legacyRealtimeBeta := strings.Contains(info.UpstreamModelName, "-realtime-preview")
 		swp := c.Request.Header.Get("Sec-WebSocket-Protocol")
 		if swp != "" {
 			items := []string{
 				"realtime",
 				"openai-insecure-api-key." + info.ApiKey,
-				"openai-beta.realtime-v1",
+			}
+			if legacyRealtimeBeta {
+				items = append(items, "openai-beta.realtime-v1")
 			}
 			header.Set("Sec-WebSocket-Protocol", strings.Join(items, ","))
 			//req.Header.Set("Sec-WebSocket-Key", c.Request.Header.Get("Sec-WebSocket-Key"))
 			//req.Header.Set("Sec-Websocket-Extensions", c.Request.Header.Get("Sec-Websocket-Extensions"))
 			//req.Header.Set("Sec-Websocket-Version", c.Request.Header.Get("Sec-Websocket-Version"))
 		} else {
-			header.Set("openai-beta", "realtime=v1")
+			if legacyRealtimeBeta {
+				header.Set("openai-beta", "realtime=v1")
+			}
 			if !hasAuthOverride {
 				header.Set("Authorization", "Bearer "+info.ApiKey)
 			}

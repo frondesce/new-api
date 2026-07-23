@@ -2,7 +2,9 @@ package openai
 
 import (
 	"encoding/base64"
+	"errors"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -281,4 +283,50 @@ func TestMiMoTTSHandler_DecodesChatAudioPayload(t *testing.T) {
 	require.Equal(t, 34, usage.CompletionTokens)
 	require.Equal(t, 46, usage.TotalTokens)
 	require.Equal(t, 34, usage.CompletionTokenDetails.AudioTokens)
+}
+
+func TestCalculateMiMoTTSAudioTokensSaturatesUntrustedMetadata(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name          string
+		audioSize     int
+		duration      float64
+		durationErr   error
+		expected      int
+		expectedClamp common.QuotaClampKind
+	}{
+		{
+			name:          "oversized fallback audio",
+			audioSize:     math.MaxInt,
+			durationErr:   errors.New("unsupported audio metadata"),
+			expected:      common.MaxQuota,
+			expectedClamp: common.QuotaClampOverflow,
+		},
+		{
+			name:          "infinite duration",
+			duration:      math.Inf(1),
+			expected:      common.MaxQuota,
+			expectedClamp: common.QuotaClampOverflow,
+		},
+		{
+			name:          "nan duration",
+			duration:      math.NaN(),
+			expected:      0,
+			expectedClamp: common.QuotaClampNaN,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			tokens, clamp := calculateMiMoTTSAudioTokens(tc.audioSize, tc.duration, tc.durationErr)
+
+			require.Equal(t, tc.expected, tokens)
+			require.NotNil(t, clamp)
+			require.Equal(t, tc.expectedClamp, clamp.Kind)
+		})
+	}
 }

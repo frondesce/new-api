@@ -403,23 +403,28 @@ func buildMiMoTTSUsage(c *gin.Context, info *relaycommon.RelayInfo, upstreamUsag
 	}
 
 	duration, durationErr := getMiMoTTSAudioDuration(audioBytes, audioFormat)
-	if durationErr != nil {
-		sizeInKB := float64(len(audioBytes)) / 1000.0
-		estimatedTokens := int(math.Ceil(sizeInKB))
-		usage.CompletionTokens = estimatedTokens
-		usage.CompletionTokenDetails.AudioTokens = estimatedTokens
-		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
-		return usage
+	completionTokens, clamp := calculateMiMoTTSAudioTokens(len(audioBytes), duration, durationErr)
+	if clamp != nil && info != nil && info.QuotaClamp == nil {
+		info.QuotaClamp = clamp
 	}
-
-	if duration > 0 {
-		completionTokens := int(math.Round(math.Ceil(duration) / 60.0 * 1000))
+	if completionTokens > 0 {
 		usage.CompletionTokens = completionTokens
 		usage.CompletionTokenDetails.AudioTokens = completionTokens
 		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 	}
 
 	return usage
+}
+
+func calculateMiMoTTSAudioTokens(audioSize int, duration float64, durationErr error) (int, *common.QuotaClamp) {
+	if durationErr != nil {
+		sizeInKB := float64(audioSize) / 1000.0
+		return common.QuotaFromFloatChecked(math.Ceil(sizeInKB))
+	}
+	if duration <= 0 && !math.IsNaN(duration) {
+		return 0, nil
+	}
+	return common.QuotaRoundChecked(math.Ceil(duration) / 60.0 * 1000)
 }
 
 func getMiMoTTSAudioDuration(audioBytes []byte, audioFormat string) (float64, error) {
