@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -85,4 +86,63 @@ func TestUserListsHideDeletedUsersByDefault(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	assert.Equal(t, []int{2}, collectUserIDs(users))
+}
+
+func TestUserListsPreservePaginationAndDeletedFilterAcrossDatabases(t *testing.T) {
+	for _, engine := range []struct {
+		name string
+		env  string
+	}{
+		{name: "mysql", env: "TEST_MYSQL_DSN"},
+		{name: "postgres", env: "TEST_POSTGRES_DSN"},
+	} {
+		t.Run(engine.name, func(t *testing.T) {
+			dsn := os.Getenv(engine.env)
+			if dsn == "" {
+				t.Skip("test database DSN is not configured")
+			}
+			t.Setenv("USER_LIST_TEST_DSN", dsn)
+			db, databaseType, err := chooseDB("USER_LIST_TEST_DSN", false)
+			require.NoError(t, err)
+			sqlDB, err := db.DB()
+			require.NoError(t, err)
+			previousDB, previousDatabaseType := DB, common.MainDatabaseType()
+			t.Cleanup(func() {
+				DB = previousDB
+				common.SetMainDatabaseType(previousDatabaseType)
+				initCol()
+				_ = sqlDB.Close()
+			})
+			DB = db
+			common.SetMainDatabaseType(databaseType)
+			initCol()
+			require.NoError(t, DB.AutoMigrate(&User{}))
+			t.Cleanup(func() { require.NoError(t, db.Migrator().DropTable(&User{})) })
+			insertUsersForPaginationTest(t, 42)
+			require.NoError(t, DB.Model(&User{}).Where("id = ?", 1).Updates(map[string]any{
+				"quota": 12345, "used_quota": 789,
+			}).Error)
+			require.NoError(t, DB.AutoMigrate(&User{}))
+			var preserved User
+			require.NoError(t, DB.First(&preserved, 1).Error)
+			assert.Equal(t, 12345, preserved.Quota)
+			assert.Equal(t, 789, preserved.UsedQuota)
+			require.NoError(t, DB.Delete(&User{}, 2).Error)
+
+			expected := []int{22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41}
+			users, total, err := GetAllUsers(&common.PageInfo{Page: 2, PageSize: 20}, NewUserSortOptions("id", "asc"))
+			require.NoError(t, err)
+			assert.Equal(t, int64(41), total)
+			assert.Equal(t, expected, collectUserIDs(users))
+			users, total, err = SearchUsers("user", "", nil, nil, 20, 20, NewUserSortOptions("id", "asc"))
+			require.NoError(t, err)
+			assert.Equal(t, int64(41), total)
+			assert.Equal(t, expected, collectUserIDs(users))
+			deletedStatus := -1
+			users, total, err = SearchUsers("user", "", nil, &deletedStatus, 0, 20, NewUserSortOptions("id", "asc"))
+			require.NoError(t, err)
+			assert.Equal(t, int64(1), total)
+			assert.Equal(t, []int{2}, collectUserIDs(users))
+		})
+	}
 }
