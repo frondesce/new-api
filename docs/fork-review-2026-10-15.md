@@ -1,6 +1,60 @@
 # Fork 独立功能与补丁复核（2026-10-15）
 
-状态：2026-10-16 用户确认四项清理范围后，已实施下列修改。最终范围以“确认后的实施记录”为准；AGY 二次复核与 2026-10-15 初审作为判断过程保留，初审建议不再整体执行。
+状态：四项清理已提交为 `030308f1e`；2026-10-16 用户另行授权同步最新上游，同步与验证记录见“后续上游同步”。清理范围以“确认后的实施记录”为准；AGY 二次复核与初审作为历史保留。
+
+## 后续上游同步（2026-10-16）
+
+清理提交 `030308f1e` 完成后，用户另行要求同步上游并解决冲突；此前“不自动合并新版上游”的边界至此获得了明确授权。本节记录这次独立的同步，不改写下方初审与清理阶段的历史基准。
+
+- 合并前本地提交：`030308f1e`（`fix(relay): tighten fork compatibility patches`）。
+- 原先已合入上游：`6370b29424168039e94d40d610191e7d2e65dbf4`。
+- 本次固定同步目标：`ca2cae676db87333a583b6e104d0f1f7366f3258`，`fix(relaykit): emit summary on reasoning items announced without one (#7833)`，提交时间 `2026-10-16 13:44:03 +0800`。
+- `git fetch --no-tags upstream main` 后，目标包含本地尚未合入的 72 个上游提交；共同基准至目标涉及 506 个文件。使用普通双亲合并，不 rebase、不重写现有历史。
+- 仅更新本地代码；没有连接用户的独立部署服务器，没有推送、部署或运行生产迁移。原有未跟踪 `.codex` 不纳入提交。
+
+### 冲突与集成处理
+
+| 文件 | 处理结果 |
+| --- | --- |
+| `relaykit/dto/channel_settings.go` | 同时保留本地 `CustomProtocol` 和上游 `VertexProjectID`，两种渠道各自的配置语义保持 |
+| `relaykit/relayconvert/request_registry_test.go` | 同时保留旧式 `googleSearch` 输入回归，以及上游两项 Claude 文本与工具调用转换回归 |
+| `web/src/features/channels/lib/channel-form.ts` | 五处相邻新增冲突均合并双方字段；schema、默认值、读取与提交同时保留 `custom_protocol` / `vertex_project_id`；沿用各自渠道类型的字段清理规则 |
+| `web/src/features/channels/types.ts` | 同时保留两项设置类型，匹配后端 DTO |
+| `relay/channel/openai/relay-openai.go` | 无文本冲突，但上游 `logger.LogDebug` 改用格式化调用；本地 Cloudflare 错误日志改为固定格式串与参数，修复 vet 失败 |
+| `controller/token_test.go` | 独立运行审计矩阵复现 legacy PAT 用例失败：fixture 未初始化生产启动时加载的过渡期限，曾依赖其他测试的全局状态。为临时测试库补建 `Option` 并调用已有初始化方法；不修改认证生产逻辑，原有拒绝、越权、审计脱敏断言保留 |
+
+上一轮 MiMo metadata 保护和 Cloudflare 精确主机/无损索引修改，与 `030308f1e` 逐字节一致；两份归档工作流也逐字节一致。`service/error.go` 与本次上游目标一致，已删除的 429 归一化层没有重新引入。GHCR 发布与其余 fork 功能继续保留。
+
+### 同步验证与环境
+
+- `mise exec -- make test`：根模块、relaykit、tokenkit 全量后端测试通过。补齐审计 fixture 后，独立筛选运行日志/审计矩阵再次通过，见下方命令；没有削弱认证边界来让测试通过。
+- 在根目录、`relaykit/`、`tokenkit/` 分别运行 `GOWORK=off mise exec -- go vet ./...` 和 `GOWORK=off mise exec -- go build ./...`：通过；relaykit/tokenkit 均独立构建，不依赖根 workspace。
+- 前端 `bun install --frozen-lockfile`、`bun run typecheck`、`bun run build`：通过，锁文件保持上游版本；`bun run i18n:sync` 后没有新增工作区差异，七种语言缺键均为 0。
+- 前端全量默认并行测试首次为 192 个文件、2291 项用例，其中 2 项失败（一个超时、一个通知可见性断言）。以 `bun run test -- --maxWorkers=2` 独立复核两个文件，51 项全通过；随后 `bun run test -- --maxWorkers=2` 整套复核 **192 个文件、2291 项用例全部通过**，耗时 426.49 秒。未修改生产逻辑或放宽测试断言来处理首次失败。
+- 四个涉及合并的渠道前端文件单独运行 `oxlint -c .oxlintrc.json`：通过。全项目 `bun run lint` 有 **158 条 error**；在 `/tmp` 解包纯上游目标并使用同版依赖与配置独立运行 oxlint，error 的文件、规则和消息集合完全相同，合并新增 error 为 0。没有扩大同步范围去改这些上游既有问题。
+- `bun run format:check` 有 **25 个文件**未通过；逐个与目标上游文件作字节比较，全部相同。本轮手工解决冲突的文件不在该列表中。检查脚本已恢复临时格式化写入，没有顺带格式化其他文件。
+- 修改的 Go 文件已 gofmt；`git diff --check` 和 `git diff --cached --check` 通过，四个冲突文件及两项额外集成调整没有遗留冲突标记。
+
+数据库测试仅使用本机 Docker 临时容器和回环地址，未挂载现有数据卷。真实版本为 **SQLite 3.50.4、MySQL 5.7.44、PostgreSQL 9.6.24**；专用 ClickHouse 日志库为 **25.8.33.6**，四库日志导出及三库独立审计存储验证通过。上游变化没有新增持久化模型字段或修改 GORM 字段标签；已有新旧结构迁移、重复迁移、数据/索引保留用例也随矩阵执行，不把通用迁移 fixture 声称为对生产备份的升级演练。
+
+运行命令如下；口令仅用于本次临时容器，容器不用于实际部署：
+
+```sh
+export TEST_MYSQL_DSN='merge_review:merge-review-test@tcp(127.0.0.1:13306)/merge_review?charset=utf8mb4&parseTime=True&loc=Local'
+export TEST_POSTGRES_DSN='postgres://merge_review:merge-review-test@127.0.0.1:15432/merge_review?sslmode=disable'
+GOWORK=off mise exec -- go test ./model -count=1 -v
+export AUDIT_MYSQL_DSN="$TEST_MYSQL_DSN"
+export AUDIT_POSTGRES_DSN="$TEST_POSTGRES_DSN"
+GOWORK=off mise exec -- go test ./controller -run '^(TestAPITokenAuditDatabaseMatrix|TestLogExportDatabaseMatrix)$' -count=1 -v
+export AUDIT_CLICKHOUSE_DSN='clickhouse://merge_review:merge-review-test@127.0.0.1:19000/default'
+GOWORK=off mise exec -- go test ./controller -run '^(TestLogExportDatabaseMatrix|TestAuditDatabaseMatrix|TestIndependentAuditLogStores)$' -count=1 -v
+```
+
+上述 model 全包测试和三库日志/审计矩阵通过，覆盖用户分页和软删除、配置往返、查询策略、迁移幂等、日志检索/导出，以及单独日志库的审计存储与隐私边界。MySQL 审计用例需为每个 fixture 建独立数据库，首次使用仅单库权限的测试账户失败；授予临时容器内的建库权限后继续验证，不对用户实际账户作权限调整。
+
+所有数据库验证结束后，已删除本轮三个临时测试容器及其匿名卷。下载的镜像留作本机缓存，未操作原有容器。
+
+认证测试参考 [OWASP Authentication](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html)、[Session Management](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html) 和 [ASVS 5.0.0](https://owasp.org/www-project-application-security-verification-standard/)：重点保留服务端鉴权、失效/越权拒绝和审计不记录可用凭据的现有断言。本次不是 ASVS 全量合规评估；未调用真实供应商，也未在独立部署服务器上验证。
 
 ## 确认后的实施记录（2026-10-16）
 

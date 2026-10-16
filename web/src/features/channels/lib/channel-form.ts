@@ -269,6 +269,7 @@ export const channelFormSchema = z
       .refine(isOptionalProxyURL, ERROR_MESSAGES.INVALID_PROXY),
     http_protocol: z.enum(['auto', 'http1']).optional(),
     http2_connection_shards: z.number().int().optional(),
+    tls_insecure_skip_verify: z.boolean().optional(),
     pass_through_body_enabled: z.boolean().optional(),
     responses_websocket_enabled: z.boolean().optional(),
     system_prompt: z.string().optional(),
@@ -277,6 +278,7 @@ export const channelFormSchema = z
     is_enterprise_account: z.boolean().optional(), // OpenRouter specific
     vertex_key_type: z.enum(['json', 'api_key']).optional(), // Vertex AI specific
     custom_protocol: z.enum(['openai', 'gemini_vertex']).optional(), // Custom channel protocol
+    vertex_project_id: z.string().optional(), // Vertex AI specific (api_key mode only)
     aws_key_type: z.enum(['ak_sk', 'api_key']).optional(), // AWS specific
     azure_responses_version: z.string().optional(), // Azure specific
     // Field passthrough controls (stored in settings JSON)
@@ -461,6 +463,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   proxy: '',
   http_protocol: HTTP_PROTOCOL_AUTO,
   http2_connection_shards: 1,
+  tls_insecure_skip_verify: false,
   pass_through_body_enabled: false,
   responses_websocket_enabled: false,
   system_prompt: '',
@@ -469,6 +472,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   is_enterprise_account: false,
   vertex_key_type: 'json',
   custom_protocol: 'openai',
+  vertex_project_id: '',
   aws_key_type: 'ak_sk',
   azure_responses_version: '',
   // Field passthrough controls
@@ -506,6 +510,7 @@ export function transformChannelToFormDefaults(
     proxy: '',
     http_protocol: HTTP_PROTOCOL_AUTO as 'auto' | 'http1',
     http2_connection_shards: 1,
+    tls_insecure_skip_verify: false,
     pass_through_body_enabled: false,
     responses_websocket_enabled: false,
     system_prompt: '',
@@ -527,6 +532,7 @@ export function transformChannelToFormDefaults(
         proxy: parsed.proxy || '',
         http_protocol: protocol,
         http2_connection_shards: protocol === HTTP_PROTOCOL_HTTP1 ? 1 : shards,
+        tls_insecure_skip_verify: parsed.tls_insecure_skip_verify === true,
         pass_through_body_enabled: parsed.pass_through_body_enabled || false,
         responses_websocket_enabled:
           parsed.responses_websocket_enabled === true,
@@ -542,6 +548,7 @@ export function transformChannelToFormDefaults(
   // Parse type-specific settings from settings field
   let vertexKeyType: 'json' | 'api_key' = 'json'
   let customProtocol: 'openai' | 'gemini_vertex' = 'openai'
+  let vertexProjectId = ''
   let azureResponsesVersion = ''
   let isEnterpriseAccount = false
   let awsKeyType: 'ak_sk' | 'api_key' = 'ak_sk'
@@ -564,6 +571,7 @@ export function transformChannelToFormDefaults(
       const parsed = JSON.parse(channel.settings)
       vertexKeyType = parsed.vertex_key_type || 'json'
       customProtocol = parsed.custom_protocol || 'openai'
+      vertexProjectId = parsed.vertex_project_id || ''
       azureResponsesVersion = parsed.azure_responses_version || ''
       isEnterpriseAccount = parsed.openrouter_enterprise === true
       awsKeyType = parsed.aws_key_type || 'ak_sk'
@@ -626,6 +634,7 @@ export function transformChannelToFormDefaults(
     is_enterprise_account: isEnterpriseAccount,
     vertex_key_type: vertexKeyType,
     custom_protocol: customProtocol,
+    vertex_project_id: vertexProjectId,
     azure_responses_version: azureResponsesVersion,
     aws_key_type: awsKeyType,
     allow_service_tier: allowServiceTier,
@@ -683,6 +692,9 @@ export function buildSettingJSON(formData: ChannelFormValues): string {
   } else if (shards > 1) {
     settingObj.http2_connection_shards = shards
   }
+  if (formData.tls_insecure_skip_verify === true) {
+    settingObj.tls_insecure_skip_verify = true
+  }
 
   return JSON.stringify(settingObj)
 }
@@ -706,8 +718,15 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
   // Add vertex_key_type for Vertex AI channels (type 41)
   if (formData.type === 41) {
     settingsObj.vertex_key_type = formData.vertex_key_type || 'json'
-  } else if ('vertex_key_type' in settingsObj) {
+    const vertexProjectId = formData.vertex_project_id?.trim()
+    if (settingsObj.vertex_key_type === 'api_key' && vertexProjectId) {
+      settingsObj.vertex_project_id = vertexProjectId
+    } else {
+      delete settingsObj.vertex_project_id
+    }
+  } else {
     delete settingsObj.vertex_key_type
+    delete settingsObj.vertex_project_id
   }
 
   // Add protocol selection for custom channels (type 8)
