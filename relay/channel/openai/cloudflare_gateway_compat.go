@@ -2,6 +2,7 @@ package openai
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -9,6 +10,7 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/model_setting"
+	"github.com/tidwall/sjson"
 )
 
 const cloudflareGatewayGeminiThoughtSignatureBypassValue = "context_engineering_is_the_way_to_go"
@@ -69,18 +71,25 @@ func (s *toolCallIndexState) assign(choiceIndex int, tool *dto.ToolCallResponse,
 	}
 }
 
+func isCloudflareAIGatewayURL(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	return err == nil &&
+		(parsed.Scheme == "http" || parsed.Scheme == "https") &&
+		strings.EqualFold(parsed.Hostname(), "gateway.ai.cloudflare.com")
+}
+
 func shouldNormalizeCloudflareGatewayToolCallIndexes(info *relaycommon.RelayInfo) bool {
 	if info == nil || info.RelayMode != relayconstant.RelayModeChatCompletions || !info.IsStream {
 		return false
 	}
-	return strings.Contains(strings.ToLower(info.ChannelBaseUrl), "gateway.ai.cloudflare.com")
+	return isCloudflareAIGatewayURL(info.ChannelBaseUrl)
 }
 
 func shouldApplyCloudflareGatewayGeminiCompat(info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) bool {
 	if info == nil || request == nil || info.RelayMode != relayconstant.RelayModeChatCompletions {
 		return false
 	}
-	if !strings.Contains(strings.ToLower(info.ChannelBaseUrl), "gateway.ai.cloudflare.com") {
+	if !isCloudflareAIGatewayURL(info.ChannelBaseUrl) {
 		return false
 	}
 	modelName := strings.ToLower(strings.TrimSpace(request.Model))
@@ -218,25 +227,23 @@ func normalizeCloudflareGatewayToolCallIndexes(data string, state *toolCallIndex
 		return data, err
 	}
 
-	modified := false
+	normalizedData := data
 	for choiceIdx := range response.Choices {
 		choiceKey := response.Choices[choiceIdx].Index
 		for toolIdx := range response.Choices[choiceIdx].Delta.ToolCalls {
 			tool := &response.Choices[choiceIdx].Delta.ToolCalls[toolIdx]
-			if tool.Index == nil {
-				modified = true
-			}
+			missingIndex := tool.Index == nil
 			state.assign(choiceKey, tool, toolIdx)
+			if missingIndex {
+				// Patch the original chunk so provider extensions survive normalization.
+				path := fmt.Sprintf("choices.%d.delta.tool_calls.%d.index", choiceIdx, toolIdx)
+				var err error
+				normalizedData, err = sjson.Set(normalizedData, path, *tool.Index)
+				if err != nil {
+					return data, err
+				}
+			}
 		}
 	}
-
-	if !modified {
-		return data, nil
-	}
-
-	out, err := common.Marshal(response)
-	if err != nil {
-		return data, err
-	}
-	return string(out), nil
+	return normalizedData, nil
 }

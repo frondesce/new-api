@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -121,68 +124,84 @@ func TestRelayErrorHandlerKeepsOpenAIErrorMessage(t *testing.T) {
 	require.Equal(t, message, newAPIError.Error())
 }
 
-func TestRelayErrorHandlerNormalizesUpstreamRateLimitErrors(t *testing.T) {
-	t.Parallel()
+func TestRelayErrorHandlerPreservesRateLimitErrorsAndConfiguredPolicy(t *testing.T) {
+	previousEnabled := common.AutomaticDisableChannelEnabled
+	previousRetryRanges := operation_setting.AutomaticRetryStatusCodeRanges
+	previousDisableRanges := operation_setting.AutomaticDisableStatusCodeRanges
+	previousKeywords := operation_setting.AutomaticDisableKeywords
+	t.Cleanup(func() {
+		common.AutomaticDisableChannelEnabled = previousEnabled
+		operation_setting.AutomaticRetryStatusCodeRanges = previousRetryRanges
+		operation_setting.AutomaticDisableStatusCodeRanges = previousDisableRanges
+		operation_setting.AutomaticDisableKeywords = previousKeywords
+	})
+	common.AutomaticDisableChannelEnabled = true
+	operation_setting.AutomaticRetryStatusCodeRanges = []operation_setting.StatusCodeRange{{Start: 429, End: 429}}
+	operation_setting.AutomaticDisableStatusCodeRanges = nil
+	operation_setting.AutomaticDisableKeywords = []string{"credit balance is too low", "余额不足"}
 
-	testCases := []struct {
-		name              string
-		body              string
-		expectedMsg       string
-		expectedType      string
-		expectedCode      string
-		expectedSkipRetry bool
+	for _, tc := range []struct {
+		name        string
+		body        string
+		message     string
+		errorType   string
+		code        string
+		wantDisable bool
 	}{
 		{
-			name:              "quota exhaustion skips relay retry",
-			body:              `{"error":{"message":"当前codeplan或资源包订阅，所剩配额不足～","type":"upstream_error","code":"upstream_error"}}`,
-			expectedMsg:       "quota exceeded: 当前codeplan或资源包订阅，所剩配额不足～",
-			expectedType:      "insufficient_quota",
-			expectedCode:      "insufficient_quota",
-			expectedSkipRetry: true,
+			name:    "Chinese balance error uses configured keyword",
+			body:    `{"error":{"message":"余额不足","type":"upstream_error","code":"upstream_error"}}`,
+			message: "余额不足", errorType: "upstream_error", code: "upstream_error", wantDisable: true,
 		},
 		{
-			name:              "transient concurrency limit remains retryable",
-			body:              `{"error":{"message":"当前并发数已达到上限","type":"upstream_error","code":"concurrency_limit"}}`,
-			expectedMsg:       "rate limit: 当前并发数已达到上限",
-			expectedType:      "rate_limit_error",
-			expectedCode:      "concurrency_limit",
-			expectedSkipRetry: false,
+			name:    "per minute quota remains retryable",
+			body:    `{"error":{"message":"quota exceeded for requests per minute","type":"rate_limit_error","code":"rate_limit_exceeded"}}`,
+			message: "quota exceeded for requests per minute", errorType: "rate_limit_error", code: "rate_limit_exceeded",
 		},
 		{
-			name:              "standard rate limit is not prefixed twice",
-			body:              `{"error":{"message":"rate limit exceeded","type":"rate_limit_error","code":"rate_limit_exceeded"}}`,
-			expectedMsg:       "rate limit exceeded",
-			expectedType:      "rate_limit_error",
-			expectedCode:      "rate_limit_exceeded",
-			expectedSkipRetry: false,
+			name:    "concurrency error keeps provider classification",
+			body:    `{"error":{"message":"当前并发数已达到上限","type":"upstream_error","code":"concurrency_limit"}}`,
+			message: "当前并发数已达到上限", errorType: "upstream_error", code: "concurrency_limit",
 		},
-	}
-
-	for _, tc := range testCases {
-		tc := tc
+		{
+			name:    "structured quota error permits configured channel disable",
+			body:    `{"error":{"message":"credit balance is too low","type":"insufficient_quota","code":"insufficient_quota"}}`,
+			message: "credit balance is too low", errorType: "insufficient_quota", code: "insufficient_quota", wantDisable: true,
+		},
+		{
+			name:    "metadata is appended once",
+			body:    `{"error":{"message":"busy","type":"rate_limit_error","code":"rate_limit_exceeded","metadata":{"request_id":"metadata-1"}}}`,
+			message: `busy ({"request_id":"metadata-1"})`, errorType: "rate_limit_error", code: "rate_limit_exceeded",
+		},
+	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
 			resp := &http.Response{
 				StatusCode: http.StatusTooManyRequests,
 				Body:       io.NopCloser(strings.NewReader(tc.body)),
 			}
+			apiErr := RelayErrorHandler(context.Background(), resp, false)
+			require.NotNil(t, apiErr)
+			assert.Equal(t, http.StatusTooManyRequests, apiErr.StatusCode)
+			assert.Equal(t, tc.message, apiErr.Error())
+			assert.Equal(t, types.ErrorCode(tc.code), apiErr.GetErrorCode())
+			assert.False(t, types.IsSkipRetryError(apiErr))
+			openAIError := apiErr.ToOpenAIError()
+			assert.Equal(t, tc.errorType, openAIError.Type)
+			assert.Equal(t, tc.code, openAIError.Code)
 
-			newAPIError := RelayErrorHandler(context.Background(), resp, false)
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			assert.Equal(t, "retry", DecideRelayRetry(c, apiErr, 1).Action)
+			assert.Equal(t, "stop", DecideRelayRetry(c, apiErr, 0).Action)
+			assert.Equal(t, tc.wantDisable, ShouldDisableChannel(apiErr))
 
-			require.NotNil(t, newAPIError)
-			require.Equal(t, http.StatusTooManyRequests, newAPIError.StatusCode)
-			require.Equal(t, tc.expectedMsg, newAPIError.Error())
-			require.Equal(t, types.ErrorCode(tc.expectedCode), newAPIError.GetErrorCode())
-			require.Equal(t, tc.expectedSkipRetry, types.IsSkipRetryError(newAPIError))
-			openAIError := newAPIError.ToOpenAIError()
-			require.Equal(t, tc.expectedType, openAIError.Type)
-			require.Equal(t, tc.expectedCode, openAIError.Code)
+			operation_setting.AutomaticRetryStatusCodeRanges = nil
+			assert.Equal(t, "stop", DecideRelayRetry(c, apiErr, 1).Action)
+			operation_setting.AutomaticRetryStatusCodeRanges = []operation_setting.StatusCodeRange{{Start: 429, End: 429}}
 		})
 	}
 }
 
-func TestRelayErrorHandlerDoesNotNormalizeNonRateLimitErrors(t *testing.T) {
+func TestRelayErrorHandlerPreservesNonRateLimitErrors(t *testing.T) {
 	t.Parallel()
 
 	resp := &http.Response{

@@ -7,6 +7,7 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/model_setting"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -45,11 +46,34 @@ func TestShouldNormalizeCloudflareGatewayToolCallIndexes(t *testing.T) {
 			ChannelBaseUrl: "https://api.openrouter.ai/v1",
 		},
 	}))
+
+	for _, tc := range []struct {
+		name string
+		url  string
+		want bool
+	}{
+		{name: "uppercase host and custom port", url: "https://GATEWAY.AI.CLOUDFLARE.COM:8443/v1/account/gateway/compat", want: true},
+		{name: "hostname suffix", url: "https://gateway.ai.cloudflare.com.example.org/v1"},
+		{name: "hostname prefix", url: "https://other.gateway.ai.cloudflare.com/v1"},
+		{name: "path only", url: "https://example.org/gateway.ai.cloudflare.com/v1"},
+		{name: "query only", url: "https://example.org/v1?target=gateway.ai.cloudflare.com"},
+		{name: "user info only", url: "https://gateway.ai.cloudflare.com@example.org/v1"},
+		{name: "malformed URL", url: "https://gateway.ai.cloudflare.com/%"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			info := &relaycommon.RelayInfo{
+				IsStream:    true,
+				RelayMode:   relayconstant.RelayModeChatCompletions,
+				ChannelMeta: &relaycommon.ChannelMeta{ChannelBaseUrl: tc.url},
+			}
+			request := &dto.GeneralOpenAIRequest{Model: "google-ai-studio/gemini-test"}
+			assert.Equal(t, tc.want, shouldNormalizeCloudflareGatewayToolCallIndexes(info))
+			assert.Equal(t, tc.want, shouldApplyCloudflareGatewayGeminiCompat(info, request))
+		})
+	}
 }
 
 func TestShouldInjectCloudflareGatewayGeminiThoughtSignature(t *testing.T) {
-	t.Parallel()
-
 	originEnabled := model_setting.GetGeminiSettings().FunctionCallThoughtSignatureEnabled
 	t.Cleanup(func() {
 		model_setting.GetGeminiSettings().FunctionCallThoughtSignatureEnabled = originEnabled
@@ -177,6 +201,26 @@ func TestNormalizeCloudflareGatewayToolCallIndexes_LeavesExistingIndexUntouched(
 	normalized, err := normalizeCloudflareGatewayToolCallIndexes(data, state)
 	require.NoError(t, err)
 	require.JSONEq(t, data, normalized)
+}
+
+func TestNormalizeCloudflareGatewayToolCallIndexesPreservesVendorFields(t *testing.T) {
+	t.Parallel()
+
+	data := `{"service_tier":"priority","vendor_flag":false,"choices":[{"index":0,"vendor_choice":0,"delta":{"vendor_delta":"keep","tool_calls":[{"index":3,"id":"existing","type":"function","function":{"name":"first","arguments":"","vendor_function":false},"extra_content":{"google":{"thought_signature":"existing-signature"}}},{"id":"new","type":"function","function":{"name":"second","arguments":"{}"},"extra_content":{"google":{"thought_signature":"new-signature"}}}]}},{"index":1,"delta":{"tool_calls":[{"id":"other-choice","type":"function","function":{"name":"third","arguments":"{}"},"vendor_tool":true}]}}],"usage":{"prompt_tokens":0,"vendor_usage":42}}`
+	want := `{"service_tier":"priority","vendor_flag":false,"choices":[{"index":0,"vendor_choice":0,"delta":{"vendor_delta":"keep","tool_calls":[{"index":3,"id":"existing","type":"function","function":{"name":"first","arguments":"","vendor_function":false},"extra_content":{"google":{"thought_signature":"existing-signature"}}},{"index":4,"id":"new","type":"function","function":{"name":"second","arguments":"{}"},"extra_content":{"google":{"thought_signature":"new-signature"}}}]}},{"index":1,"delta":{"tool_calls":[{"index":0,"id":"other-choice","type":"function","function":{"name":"third","arguments":"{}"},"vendor_tool":true}]}}],"usage":{"prompt_tokens":0,"vendor_usage":42}}`
+
+	normalized, err := normalizeCloudflareGatewayToolCallIndexes(data, newToolCallIndexState())
+	require.NoError(t, err)
+	assert.JSONEq(t, want, normalized)
+}
+
+func TestNormalizeCloudflareGatewayToolCallIndexesReturnsMalformedChunkUnchanged(t *testing.T) {
+	t.Parallel()
+
+	data := `{"choices":[`
+	normalized, err := normalizeCloudflareGatewayToolCallIndexes(data, newToolCallIndexState())
+	require.Error(t, err)
+	assert.Equal(t, data, normalized)
 }
 
 func TestInjectCloudflareGatewayGeminiThoughtSignature_AddsBypassSignature(t *testing.T) {

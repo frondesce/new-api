@@ -15,8 +15,11 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestGetRequestURL_UsesChatCompletionsForMiMoAudioSpeech(t *testing.T) {
@@ -118,6 +121,7 @@ func TestConvertAudioRequest_ConvertsMiMoTTSIntoChatCompletionsBody(t *testing.T
 		Voice:          "alloy",
 		Instructions:   "Speak warmly.",
 		ResponseFormat: "wav",
+		Metadata:       []byte(`{"audio":{"language":"zh"},"seed":0,"provider_extension":{"stream":false}}`),
 	})
 	require.NoError(t, err)
 
@@ -148,6 +152,49 @@ func TestConvertAudioRequest_ConvertsMiMoTTSIntoChatCompletionsBody(t *testing.T
 	require.True(t, ok)
 	require.Equal(t, "wav", audio["format"])
 	require.Equal(t, "mimo_default", audio["voice"])
+	assert.Equal(t, "zh", audio["language"])
+	assert.True(t, gjson.GetBytes(bodyBytes, "seed").Exists())
+	assert.Zero(t, gjson.GetBytes(bodyBytes, "seed").Int())
+	assert.True(t, gjson.GetBytes(bodyBytes, "provider_extension.stream").Exists())
+	assert.False(t, gjson.GetBytes(bodyBytes, "provider_extension.stream").Bool())
+}
+
+func TestConvertAudioRequestRejectsMiMoCoreMetadata(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name     string
+		metadata string
+		field    string
+	}{
+		{name: "model override", metadata: `{"model":"different-model"}`, field: "model"},
+		{name: "null model", metadata: `{"model":null}`, field: "model"},
+		{name: "message override", metadata: `{"messages":[{"role":"assistant","content":"replacement text"}]}`, field: "messages"},
+		{name: "null messages", metadata: `{"messages":null}`, field: "messages"},
+		{name: "enable streaming", metadata: `{"stream":true}`, field: "stream"},
+		{name: "explicit false streaming", metadata: `{"stream":false}`, field: "stream"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+			ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/audio/speech", nil)
+			info := &relaycommon.RelayInfo{
+				RelayMode:   relayconstant.RelayModeAudioSpeech,
+				ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "mimo-v2.5-tts"},
+			}
+			reader, err := (&Adaptor{}).ConvertAudioRequest(ctx, info, dto.AudioRequest{
+				Model: "mimo-v2.5-tts", Input: "original text", Metadata: []byte(tc.metadata),
+			})
+			require.Error(t, err)
+			assert.Nil(t, reader)
+			// AudioHelper wraps conversion errors with NewError; the client status
+			// and non-retryable classification must survive that boundary.
+			apiErr := types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+			assert.Equal(t, types.ErrorCodeInvalidRequest, apiErr.GetErrorCode())
+			assert.True(t, types.IsSkipRetryError(apiErr))
+			assert.Contains(t, apiErr.Error(), tc.field)
+		})
+	}
 }
 
 func TestConvertAudioRequest_MapsSpeedIntoMiMoStyleTag(t *testing.T) {

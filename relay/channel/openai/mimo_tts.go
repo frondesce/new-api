@@ -106,6 +106,14 @@ func buildMiMoTTSChatRequest(info *relaycommon.RelayInfo, request dto.AudioReque
 		if err := common.Unmarshal(request.Metadata, &metadata); err != nil {
 			return nil, fmt.Errorf("error unmarshalling metadata to mimo request: %w", err)
 		}
+		for _, field := range []string{"model", "messages", "stream"} {
+			if _, exists := metadata[field]; exists {
+				return nil, types.NewErrorWithStatusCode(
+					fmt.Errorf("MiMo TTS metadata must not override %s", field),
+					types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry(),
+				)
+			}
+		}
 		mergeMiMoRequestMap(body, metadata)
 	}
 
