@@ -28,8 +28,6 @@ This adapter supports non-streaming edits. Disable request-body passthrough on t
 
 - **Keep deleted accounts out of ordinary user lists.** Default listing and search exclude soft-deleted users, while the explicit deleted-user filter remains available.
 
-These changes are reviewed as upstream evolves. See the [fork patch review](../docs/fork-review-2026-10-15.md) for the comparison baselines, individual decisions, retired patches, and the latest upstream sync.
-
 ## Quick start
 
 Use this fork's GHCR image for a local instance with SQLite:
@@ -60,7 +58,6 @@ The [GHCR workflow](workflows/docker-image-ghcr.yml) builds for `linux/amd64` an
 - [简体中文项目说明](../README.zh_CN.md)
 - [Official New API documentation](https://docs.newapi.ai/)
 - [OpenRouter image-editing guide](../docs/openrouter-image-edits.md)
-- [Fork patch review and maintenance decisions](../docs/fork-review-2026-10-15.md)
 - [Upstream project — QuantumNous/new-api](https://github.com/QuantumNous/new-api)
 - [License](../LICENSE) and [attribution notices](../NOTICE)
 
