@@ -2,6 +2,58 @@
 
 状态：四项清理已提交为 `030308f1e`；2026-10-16 用户另行授权同步最新上游，同步与验证记录见“后续上游同步”。清理范围以“确认后的实施记录”为准；AGY 二次复核与初审作为历史保留。
 
+## 后续上游同步（2026-10-22）
+
+- 合并前 HEAD：`80b448d08313e3b4fa3372c82bdd3cd8cdd180b8`。
+- 共同祖先及上次整合点：`ca2cae676db87333a583b6e104d0f1f7366f3258`。
+- 本次目标：`upstream/main@7d8b91268dab69d7150f345c448b5e250163146a`，也是 `v1.0.0-rc.46`；新增 30 个上游提交。
+- 使用普通双亲 merge，保留已有历史；原有未跟踪 `.codex` 不纳入提交，没有推送或部署。
+
+唯一文本冲突位于 `relay/channel/gemini/adaptor.go` 的 import：保留本地 Custom Gemini/Vertex URL 所需的 `net/url`，并加入上游多模态 embedding 输入校验所需的 `slices`。自动合并后的渠道 schema、默认值、读取、提交和类型同时保留本地 `custom_protocol`、已有 `vertex_project_id` 和新增 `aws_api_type`。原有渠道配置回归包含在前端全量测试中。
+
+对本次相交的分支差异作了核对：MiMo metadata 保护、Cloudflare 精确主机和无损索引处理、OpenRouter 图片桥接、GHCR/Compose 和已归档工作流与合并前逐字节一致；用户软删除筛选、本地 Gemini/Vertex 配置及旧式 Google Search 转换回归继续保留。`service/error.go` 仍与上游一致，没有恢复旧的全局 429 归一化补丁。
+
+复核新引入的 Resend 代码时，发现其服务器日志会直接记录供应商错误正文和传输错误，能够带出 API key、验证码或重置令牌。扩展现有 `controller/email_delivery_test.go`，先确认两条日志泄漏路径失败，再修改 `common/email_resend.go`：HTTP 失败只记录状态码，传输失败只记录固定事件；中文服务器日志键同步更新。对外错误、发送次数、不重定向和不自动回退的行为保持。没有新增 UI 或通用组件实现。
+
+### 值得关注的功能和兼容变化
+
+- **渠道优先级拖拽**：渠道列表支持拖拽加入同一优先级或插入新层级，提供引导演示、预览和撤销；后端包含版本冲突及事务回滚保护。见上游 `5e9595190`、`5c31c1fa9` 和 `web/src/features/channels/components/channels-table.tsx`。
+- **DeepSeek V4.1 Flash 与工具接口**：支持 Search/Fetch API 和 `@thinking` / `@effort` 修饰符。渠道模型列表使用 `deepseek-flash` 等名称；工具有独立价格配置，更新时应检查工具价格。见 `6cf0d90b5`、`relay/channel/deepseek/`、`router/relay-router.go`。
+- **Resend 邮件发送**：系统设置的邮件集成中可以在 SMTP 与 Resend 间选择；需配置已验证域名的发件地址和 API key。账户安全邮件也按用户语言发送。见 `32e587406` 和 `web/src/features/system-settings/integrations/email-settings-section.tsx`。
+- **通知分类开关**：个人设置可以分别控制余额、渠道及模型更新通知；余额提醒改为余额跨越阈值时触发，系统也有总开关。见 `6461f084f` 和 `web/src/features/profile/components/tabs/notification-tab.tsx`。
+- **仪表盘缓存用量**：在总 token 用量旁展示缓存读取和缓存创建统计。`quota_data` 新增两列，历史数据初始为零；审计日志另增加 `(created_at, event_id)` 排序索引。见 `603a5ceb5`、`058c8231b`。
+- **更多上游接口**：AWS 渠道可选择 Mantle Messages API，已有渠道默认保持 InvokeModel；阿里支持 `qwen3-vl-embedding` 多模态向量化。见 `d03220473`、`afe73b08f`。
+- **运行与任务修复**：Go 最低版本提高到 1.26.10；Claude 流式请求在准备和重试期间持续保活，异步任务在重试前重新定价并补足预留，轮询重定向限制凭据接收主机。见 `7d8b91268`、`25372e30b`、`55e2ae54d`、`590042682`。
+
+### 验证结果
+
+- `make test`：根模块、relaykit、tokenkit 全量测试通过。Resend 修复后，额外执行 `go test ./common ./controller -count=1`，两个包通过；`go test ./controller -run '^TestResend' -count=1 -v` 全部通过。修复前的两项日志脱敏回归确实失败，日志在 `/tmp/new-api-sync-20261022-resend-before.log`。
+- 根目录、`relaykit/`、`tokenkit/` 各自执行 `GOWORK=off go build ./...` 和 `GOWORK=off go vet ./...`，均通过；根模块在 Resend 修复后再次通过。根工具链为 Go 1.26.10，两个子模块遵循各自 `go.mod`。
+- AGY 执行前端机械验证，Codex 复核日志与比较结果：`bun install --frozen-lockfile`、`bun run typecheck`、`bun run build` 通过；`bun run test -- --maxWorkers=2` 为 **200 个测试文件、2386 项用例全部通过**。
+- `bun run lint` 仍有 158 条 error、66 条 warning；`bun run format:check` 仍有 25 个文件失败。所有报错文件与目标上游逐字节相同；在 `/tmp` 隔离提取纯上游文件、使用同版依赖和配置复核，224 条 lint 诊断的完整集合相同，格式失败列表也相同。没有合并新增项，没有顺带修改这些上游问题。
+- `bun run i18n:sync` 通过，七种语言 missingCount/extrasCount 均为 0，没有产生额外 tracked diff。工具报告 ja/ru/zh 各有 4/5/3 项与英文值相同，此结果不等同于人工判定翻译错误。前端完整日志及基线比较保存在 `/tmp/new-api-sync-20261022-frontend/`。
+- 修改的 Go 文件已 gofmt；无未合并索引项或冲突标记，`git diff --check` 和 `git diff --cached --check` 通过。
+
+数据库均为本次创建的隔离 Docker 容器，无现有数据卷：**SQLite 3.50.4、MySQL 5.7.44、PostgreSQL 9.6.24、ClickHouse 25.8.33.6**。实际执行：
+
+```bash
+export TEST_MYSQL_DSN='root:sync-test-only@tcp(127.0.0.1:13306)/merge_review?charset=utf8mb4&parseTime=True&loc=Local'
+export TEST_POSTGRES_DSN='postgres://merge_review:sync-test-only@127.0.0.1:15432/merge_review?sslmode=disable'
+GOWORK=off go test ./model -count=1 -v
+export AUDIT_MYSQL_DSN="$TEST_MYSQL_DSN"
+export AUDIT_POSTGRES_DSN="$TEST_POSTGRES_DSN"
+export AUDIT_CLICKHOUSE_DSN='clickhouse://merge_review:sync-test-only@127.0.0.1:19000/default'
+GOWORK=off go test ./controller -run '^(TestAPITokenAuditDatabaseMatrix|TestLogExportDatabaseMatrix|TestAuditDatabaseMatrix|TestIndependentAuditLogStores)$' -count=1 -v
+```
+
+上述命令全部通过，没有跳过三库分支。覆盖渠道优先级事务、分页/软删除、已有迁移、审计索引的新建和升级、重复迁移、数据/索引/唯一性保留，以及独立日志库。日志分别为 `/tmp/new-api-sync-20261022-model-matrix.log`、`/tmp/new-api-sync-20261022-audit-matrix.log`。
+
+另用 `/tmp/new-api-sync-20261022-cache-migration.go` 验证新增缓存统计字段：三库分别覆盖 fresh、旧整合点 `ca2cae676` 的 QuotaData 结构、最新发布 rc.46 的 QuotaData 结构，共九种组合。旧结构从对应提交原样提取；rc.46 与本目标的模型代码相同。每种组合运行三次实际 `InitDB` / `InitLogDB`，保留既有行和索引，并经过内存合并、首次写入、后续增量更新及四种统计查询，检查缓存累计值超过 int32 时仍准确。全部通过；结果在 `/tmp/new-api-sync-20261022-cache-migration.log`。这覆盖代表性结构与数据，不是生产数据库备份的升级演练。
+
+缓存迁移程序首次因 MySQL 测试库默认 latin1 被启动保护拒绝；随后创建独立 utf8mb4 `cache_review` 数据库，将上述两个 TEST DSN 中的数据库名改为 `cache_review`，运行 `GOWORK=off go run /tmp/new-api-sync-20261022-cache-migration.go`，得到全部通过结果。没有改动数据库兼容保护。结束后已删除三个临时容器及匿名卷，镜像留作缓存。
+
+认证相关复核参考 [Authentication](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html)、[Session Management](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)、[Forgot Password](https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html)、[Logging](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html) 和 [ASVS 5.0.0 V16](https://github.com/OWASP/ASVS/blob/v5.0.0/5.0/en/0x25-V16-Security-Logging-and-Error-Handling.md)。Resend 修复针对 **16.2.5** 的日志凭据保护，并保留 **16.3.4** 的失败可观测性及对外错误脱敏。账户证明、验证码失效/重放/次数限制、会话失效与审计脱敏沿用并运行现有后端回归；没有改变认证保证或跳过后端验证。未调用真实邮件或 AI 供应商，未执行生产迁移，也不宣称完成 ASVS 全量合规评估。
+
 ## 后续上游同步（2026-10-16）
 
 清理提交 `030308f1e` 完成后，用户另行要求同步上游并解决冲突；此前“不自动合并新版上游”的边界至此获得了明确授权。本节记录这次独立的同步，不改写下方初审与清理阶段的历史基准。
