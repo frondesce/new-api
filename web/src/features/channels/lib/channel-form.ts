@@ -279,6 +279,7 @@ export const channelFormSchema = z
     vertex_key_type: z.enum(['json', 'api_key']).optional(), // Vertex AI specific
     custom_protocol: z.enum(['openai', 'gemini_vertex']).optional(), // Custom channel protocol
     vertex_project_id: z.string().optional(), // Vertex AI specific (api_key mode only)
+    vertex_api_version: z.enum(['v1', 'v1beta1']).optional(), // Vertex AI Google model (Gemini, Imagen) path version
     aws_key_type: z.enum(['ak_sk', 'api_key']).optional(), // AWS specific
     aws_api_type: z.enum(['invoke_model', 'mantle']).optional(),
     azure_responses_version: z.string().optional(), // Azure specific
@@ -474,6 +475,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   vertex_key_type: 'json',
   custom_protocol: 'openai',
   vertex_project_id: '',
+  vertex_api_version: 'v1',
   aws_key_type: 'ak_sk',
   aws_api_type: 'invoke_model',
   azure_responses_version: '',
@@ -551,6 +553,7 @@ export function transformChannelToFormDefaults(
   let vertexKeyType: 'json' | 'api_key' = 'json'
   let customProtocol: 'openai' | 'gemini_vertex' = 'openai'
   let vertexProjectId = ''
+  let vertexApiVersion: 'v1' | 'v1beta1' = 'v1'
   let azureResponsesVersion = ''
   let isEnterpriseAccount = false
   let awsKeyType: 'ak_sk' | 'api_key' = 'ak_sk'
@@ -575,6 +578,8 @@ export function transformChannelToFormDefaults(
       vertexKeyType = parsed.vertex_key_type || 'json'
       customProtocol = parsed.custom_protocol || 'openai'
       vertexProjectId = parsed.vertex_project_id || ''
+      vertexApiVersion =
+        parsed.vertex_api_version === 'v1beta1' ? 'v1beta1' : 'v1'
       azureResponsesVersion = parsed.azure_responses_version || ''
       isEnterpriseAccount = parsed.openrouter_enterprise === true
       awsKeyType = parsed.aws_key_type || 'ak_sk'
@@ -639,6 +644,7 @@ export function transformChannelToFormDefaults(
     vertex_key_type: vertexKeyType,
     custom_protocol: customProtocol,
     vertex_project_id: vertexProjectId,
+    vertex_api_version: vertexApiVersion,
     azure_responses_version: azureResponsesVersion,
     aws_key_type: awsKeyType,
     aws_api_type: awsApiType,
@@ -727,9 +733,11 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     } else {
       delete settingsObj.vertex_project_id
     }
+    settingsObj.vertex_api_version = formData.vertex_api_version || 'v1'
   } else {
     delete settingsObj.vertex_key_type
     delete settingsObj.vertex_project_id
+    delete settingsObj.vertex_api_version
   }
 
   // Add protocol selection for custom channels (type 8)
